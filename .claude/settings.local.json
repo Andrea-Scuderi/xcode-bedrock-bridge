@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:github.com)",
+      "Bash(swift package:*)",
+      "Bash(tail:*)",
+      "Bash(grep:*)",
+      "Bash(awk NR>=4117 && NR<=4160:*)"
+    ]
+  }
+}
