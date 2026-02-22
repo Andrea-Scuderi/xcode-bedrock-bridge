@@ -23,18 +23,18 @@ Last updated: February 2026.
 ## 1. Architecture Overview
 
 ```
-┌────────────────────────────────────────────────────────┐
-│                    Xcode 26.3                          │
-│                                                        │
-│  ┌──────────────────┐     ┌─────────────────────────┐ │
-│  │ Xcode Intelligence│     │   Claude Coding Agent   │ │
-│  │ (code completion, │     │ (agentic coding, tools, │ │
-│  │  inline chat)     │     │  file read/write/run)   │ │
-│  └────────┬─────────┘     └────────────┬────────────┘ │
-│           │ OpenAI format               │ Anthropic format
-│           │ /v1/chat/completions        │ /v1/messages
-│           │ /v1/models                  │ /v1/messages/count_tokens
-└───────────┼─────────────────────────────┼──────────────┘
+┌──────────────────────────────────────────────────────────────────────────┐
+│                    Xcode 26.3                                            │
+│                                                                          │
+│  ┌───────────────────┐     ┌─────────────────────────┐                   │
+│  │ Xcode Intelligence│     │   Claude Coding Agent   │                   │
+│  │ (code completion, │     │ (agentic coding, tools, │                   │
+│  │  inline chat)     │     │  file read/write/run)   │                   │
+│  └────────┬──────────┘     └────────────┬────────────┘                   │
+│           │ OpenAI format               │ Anthropic format               │   
+│           │ /v1/chat/completions        │ /v1/messages                   │
+│           │ /v1/models                  │ /v1/messages/count_tokens      │
+└───────────┼─────────────────────────────┼────────────────────────────────┘
             │                             │
             ▼                             ▼
 ┌───────────────────────────────────────────────────────┐
@@ -53,9 +53,9 @@ Last updated: February 2026.
                                 │ AWS SigV4 (Soto)
                                 ▼
                    ┌────────────────────────┐
-                   │    Amazon Bedrock       │
-                   │   Converse API          │
-                   │  (Claude models)        │
+                   │    Amazon Bedrock      │
+                   │   Converse API         │
+                   │  (Claude models)       │
                    └────────────────────────┘
 ```
 
