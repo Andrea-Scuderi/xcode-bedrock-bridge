@@ -5,6 +5,7 @@ import Vapor
 struct AppConfiguration: Sendable {
     let awsRegion: String
     let awsProfile: String?
+    let bedrockAPIKey: String?
     let defaultBedrockModel: String
     let proxyAPIKey: String?
     let port: Int
@@ -12,6 +13,7 @@ struct AppConfiguration: Sendable {
     init() {
         awsRegion = Environment.get("AWS_REGION") ?? "us-east-1"
         awsProfile = Environment.get("PROFILE")
+        bedrockAPIKey = Environment.get("BEDROCK_API_KEY")
         defaultBedrockModel = Environment.get("DEFAULT_BEDROCK_MODEL")
             ?? "us.anthropic.claude-sonnet-4-5-20250929-v1:0"
         proxyAPIKey = Environment.get("PROXY_API_KEY")

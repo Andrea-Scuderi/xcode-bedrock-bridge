@@ -12,13 +12,17 @@ public func configure(_ app: Application) async throws {
     app.routes.defaultMaxBodySize = "32mb"
 
     // Initialise the Bedrock service (actor)
-    let bedrock = BedrockService(region: config.awsRegion, profile: config.awsProfile)
+    let bedrock = BedrockService(region: config.awsRegion, profile: config.awsProfile, bedrockAPIKey: config.bedrockAPIKey)
     app.bedrockService = bedrock
 
     app.logger.info("Starting swift-open-llm-proxy")
     app.logger.info("AWS Region: \(config.awsRegion)")
-    if let profile = config.awsProfile {
-        app.logger.info("AWS Profile: \(profile)")
+    if config.bedrockAPIKey != nil {
+        app.logger.info("Bedrock auth: API key (Bearer token)")
+    } else if let profile = config.awsProfile {
+        app.logger.info("Bedrock auth: AWS profile '\(profile)'")
+    } else {
+        app.logger.info("Bedrock auth: default AWS credential chain")
     }
     app.logger.info("Default Bedrock model: \(config.defaultBedrockModel)")
     app.logger.info("Port: \(config.port)")

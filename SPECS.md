@@ -468,9 +468,15 @@ All model IDs use **cross-region inference profiles** (`us.` prefix), which supp
 
 ## 7. Authentication & Configuration
 
+### Bedrock API Key (Bearer Token)
+
+When `BEDROCK_API_KEY` is set, the proxy authenticates to Bedrock using a Bearer token instead of AWS SigV4 signing. The key is sent as `Authorization: Bearer <key>` on every request, and the SigV4 signing step is skipped entirely (empty credentials cause Soto's `signHeaders` to return early).
+
+`BEDROCK_API_KEY` takes precedence over `PROFILE` and the default AWS credential chain.
+
 ### AWS Credentials
 
-Soto's `AWSClient` resolves credentials in this order:
+When `BEDROCK_API_KEY` is **not** set, Soto's `AWSClient` resolves credentials in this order:
 1. `PROFILE` env var → `~/.aws/credentials` named profile
 2. `AWS_ACCESS_KEY_ID` + `AWS_SECRET_ACCESS_KEY` env vars
 3. `~/.aws/credentials` default profile
@@ -551,7 +557,8 @@ data: {"type":"error","error":{"type":"api_error","message":"<message>"}}
 
 | Environment Variable | Required | Default | Description |
 |---|---|---|---|
-| `AWS_ACCESS_KEY_ID` | No* | — | AWS access key (*or use `PROFILE`) |
+| `BEDROCK_API_KEY` | No† | — | Bedrock API key; sent as `Authorization: Bearer <key>`. Overrides all AWS credential options. |
+| `AWS_ACCESS_KEY_ID` | No* | — | AWS access key (*or use `PROFILE` or `BEDROCK_API_KEY`) |
 | `AWS_SECRET_ACCESS_KEY` | No* | — | AWS secret key |
 | `AWS_SESSION_TOKEN` | No | — | For temporary / assumed-role credentials |
 | `AWS_REGION` | No | `us-east-1` | Bedrock service region |
@@ -561,12 +568,22 @@ data: {"type":"error","error":{"type":"api_error","message":"<message>"}}
 | `PORT` | No | `8080` | HTTP listen port |
 | `LOG_LEVEL` | No | `info` | Vapor log level (`debug`, `info`, `warning`, `error`) |
 
-**Run:**
+† Setting `BEDROCK_API_KEY` disables SigV4 signing and all `AWS_*` credential env vars are ignored.
+
+**Run (AWS credentials):**
 ```bash
 export AWS_REGION=us-east-1
 export PROFILE=bedrock-dev          # or use AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY
 export PROXY_API_KEY=my-secret-key  # optional
 export LOG_LEVEL=debug              # shows raw Xcode payloads
+swift run Run
+```
+
+**Run (Bedrock API key):**
+```bash
+export AWS_REGION=us-east-1
+export BEDROCK_API_KEY=your-bedrock-api-key
+export PROXY_API_KEY=my-secret-key  # optional
 swift run Run
 ```
 

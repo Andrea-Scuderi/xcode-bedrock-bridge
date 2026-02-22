@@ -6,11 +6,20 @@ actor BedrockService {
     private let client: AWSClient
     let runtime: BedrockRuntime
 
-    init(region: String, profile: String? = nil) {
-        let credentialProvider: CredentialProviderFactory = profile.map {
-            .configFile(profile: $0)
-        } ?? .default
-        self.client = AWSClient(credentialProvider: credentialProvider)
+    init(region: String, profile: String? = nil, bedrockAPIKey: String? = nil) {
+        if let apiKey = bedrockAPIKey {
+            // Bedrock API key authentication: inject Bearer token; skip SigV4 (empty credentials
+            // cause signHeaders to return early without adding an Authorization header).
+            self.client = AWSClient(
+                credentialProvider: .empty,
+                middleware: AWSEditHeadersMiddleware(.replace(name: "Authorization", value: "Bearer \(apiKey)"))
+            )
+        } else {
+            let credentialProvider: CredentialProviderFactory = profile.map {
+                .configFile(profile: $0)
+            } ?? .default
+            self.client = AWSClient(credentialProvider: credentialProvider)
+        }
         self.runtime = BedrockRuntime(client: client, region: .init(rawValue: region))
     }
 
