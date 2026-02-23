@@ -11,15 +11,15 @@ Xcode speaks OpenAI and Anthropic API formats; Bedrock uses its own Converse API
 ## How it works
 
 ```
-Xcode Intelligence          ──► POST /v1/chat/completions  ─┐
-(code completion, chat)         GET  /v1/models              │
-                                                             │  swift-open-llm-proxy
-Xcode Coding Agent          ──► POST /v1/messages           ─┤  (Vapor + Soto)
-(file read/write/run tools)     POST /v1/messages/count_tokens│
-                                                             │
-                                                             └──► AWS Bedrock
-                                                                  Converse API
-                                                                  (Claude models)
+Xcode Intelligence          ──► POST /v1/chat/completions     ─┐
+(code completion, chat)         GET  /v1/models                │
+                                                               │  swift-open-llm-proxy
+Xcode Coding Agent          ──► POST /v1/messages             ─┤  (Vapor + Soto)
+(file read/write/run tools)     POST /v1/messages/count_tokens │
+                                                               │
+                                                               └──► AWS Bedrock
+                                                                    Converse API
+                                                                    (Claude models)
 ```
 
 Both Xcode integration modes are covered:
