@@ -1,5 +1,6 @@
 import Testing
 import Vapor
+import VaporTesting
 @testable import App
 
 @Suite("AppConfiguration Defaults")
@@ -45,5 +46,12 @@ struct AppConfigurationDefaultsTests {
         guard ProcessInfo.processInfo.environment["BEDROCK_API_KEY"] == nil else { return }
         let config = AppConfiguration()
         #expect(config.bedrockAPIKey == nil)
+    }
+
+    @Test("optionalBedrockService is nil before BedrockService is initialized")
+    func optionalBedrockServiceIsNilBeforeInitialization() async throws {
+        let app = try await Application.make(.testing)
+        defer { Task { try await app.asyncShutdown() } }
+        #expect(app.optionalBedrockService == nil)
     }
 }

@@ -49,6 +49,7 @@ Last updated: February 2026.
 │                   BedrockService (actor)              │
 │                   converse() / converseStream()       │
 │                   converseStreamRaw()                 │
+│                   listFoundationModels()              │
 └───────────────────────────────┬───────────────────────┘
                                 │ AWS SigV4 (Soto)
                                 ▼
@@ -117,6 +118,17 @@ defaults write com.apple.dt.Xcode IDEChatClaudeAgentAPIKeyOverride ' '
 
 Returns the list of available models in OpenAI format.
 
+**Dynamic vs. static behaviour:**
+
+| Condition | Behaviour |
+|---|---|
+| Real AWS credentials (default/profile) | Calls `Bedrock.listFoundationModels()` — returns all models available in the region |
+| Bedrock API key (`BEDROCK_API_KEY`) | Management API not supported with Bearer auth → static fallback |
+| Network/auth error from management API | Warning logged, static fallback returned |
+| No `BedrockService` (unit tests) | Static fallback immediately |
+
+`owned_by` is derived from the model ID prefix: `anthropic.*` / `us.anthropic.*` → `"anthropic"`, `amazon.*` / `us.amazon.*` → `"amazon"`, etc.
+
 **Response:**
 ```json
 {
@@ -127,6 +139,12 @@ Returns the list of available models in OpenAI format.
       "object": "model",
       "created": 1234567890,
       "owned_by": "anthropic"
+    },
+    {
+      "id": "us.amazon.nova-pro-v1:0",
+      "object": "model",
+      "created": 1234567890,
+      "owned_by": "amazon"
     }
   ]
 }
@@ -343,7 +361,12 @@ Called by the agent as a preflight before large requests to estimate context usa
 
 ## 5. Amazon Bedrock Converse API
 
-The proxy uses Soto's `SotoBedrockRuntime` package to call the Bedrock **Converse API**, which provides a unified interface for all Claude models and handles the Anthropic Messages format internally.
+The proxy uses two Soto packages:
+
+- **`SotoBedrockRuntime`** — inference plane: `BedrockRuntime.converse()` and `BedrockRuntime.converseStream()`
+- **`SotoBedrock`** — management plane: `Bedrock.listFoundationModels()` (used by `GET /v1/models`)
+
+Both share a single `AWSClient` instance inside `BedrockService`.
 
 ### 5.1 Key Soto Types
 
@@ -420,9 +443,13 @@ The proxy uses Soto's `SotoBedrockRuntime` package to call the Bedrock **Convers
 
 ## 6. Model IDs & Mapping
 
-All model IDs use **cross-region inference profiles** (`us.` prefix), which support on-demand throughput without provisioning. Bare `anthropic.*` IDs for older models (Claude 3 Opus, Claude 3 Sonnet) no longer support on-demand throughput.
+The proxy supports both **Anthropic Claude** and **Amazon Nova** models. All static fallback IDs use **cross-region inference profiles** (`us.` prefix) for on-demand throughput without provisioning. Bare `anthropic.*` IDs for older models (Claude 3 Opus, Claude 3 Sonnet) no longer support on-demand throughput.
 
-### Available Models (February 2026)
+### Static Fallback Models (February 2026)
+
+When the live `listFoundationModels` call is unavailable, the following models are returned.
+
+#### Anthropic Claude
 
 | Display Name | Inference Profile ID |
 |---|---|
@@ -440,6 +467,14 @@ All model IDs use **cross-region inference profiles** (`us.` prefix), which supp
 | Claude 3 Opus | `us.anthropic.claude-3-opus-20240229-v1:0` |
 | Claude 3 Sonnet | `us.anthropic.claude-3-sonnet-20240229-v1:0` |
 | Claude 3 Haiku | `us.anthropic.claude-3-haiku-20240307-v1:0` |
+
+#### Amazon Nova
+
+| Display Name | Inference Profile ID |
+|---|---|
+| Amazon Nova Pro | `us.amazon.nova-pro-v1:0` |
+| Amazon Nova Lite | `us.amazon.nova-lite-v1:0` |
+| Amazon Nova Micro | `us.amazon.nova-micro-v1:0` |
 
 > **Note:** `us.` inference profiles are for `us-east-1` / `us-west-2`. For EU or AP regions, use the `eu.` or `ap.` prefix respectively.
 
@@ -462,6 +497,9 @@ All model IDs use **cross-region inference profiles** (`us.` prefix), which supp
 | `claude-3-opus` | `us.anthropic.claude-3-opus-20240229-v1:0` |
 | `claude-3-sonnet` | `us.anthropic.claude-3-sonnet-20240229-v1:0` |
 | `claude-3-haiku` | `us.anthropic.claude-3-haiku-20240307-v1:0` |
+| `nova-pro` | `us.amazon.nova-pro-v1:0` |
+| `nova-lite` | `us.amazon.nova-lite-v1:0` |
+| `nova-micro` | `us.amazon.nova-micro-v1:0` |
 | IDs containing `anthropic.` or `amazon.` | passed through as-is |
 
 ---
@@ -621,4 +659,5 @@ swift run Run
 - [Vapor web framework](https://github.com/vapor/vapor)
 - [Soto — AWS SDK for Swift](https://github.com/soto-project/soto)
 - [SotoBedrockRuntime shapes source](https://github.com/soto-project/soto/blob/main/Sources/Soto/Services/BedrockRuntime/BedrockRuntime_shapes.swift)
+- [SotoBedrock shapes source](https://github.com/soto-project/soto/blob/main/Sources/Soto/Services/Bedrock/Bedrock_shapes.swift)
 - [SotoCore AWSDocument type](https://github.com/soto-project/soto-core/blob/main/Sources/SotoCore/AWSShapes/Document.swift)

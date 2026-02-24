@@ -51,6 +51,11 @@ struct ModelMapper: Sendable {
         "claude-3-opus":       "us.anthropic.claude-3-opus-20240229-v1:0",
         "claude-3-sonnet":     "us.anthropic.claude-3-sonnet-20240229-v1:0",
         "claude-3-haiku":      "us.anthropic.claude-3-haiku-20240307-v1:0",
+
+        // Amazon Nova
+        "nova-pro":            "us.amazon.nova-pro-v1:0",
+        "nova-lite":           "us.amazon.nova-lite-v1:0",
+        "nova-micro":          "us.amazon.nova-micro-v1:0",
     ]
 
     let defaultModel: String
@@ -99,5 +104,9 @@ extension Application {
         set {
             storage[BedrockServiceKey.self] = newValue
         }
+    }
+
+    var optionalBedrockService: (any FoundationModelListable)? {
+        storage[BedrockServiceKey.self]
     }
 }

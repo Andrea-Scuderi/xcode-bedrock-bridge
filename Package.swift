@@ -16,6 +16,7 @@ let package = Package(
             dependencies: [
                 .product(name: "Vapor", package: "vapor"),
                 .product(name: "SotoBedrockRuntime", package: "soto"),
+                .product(name: "SotoBedrock", package: "soto"),
             ],
             path: "Sources/App"
         ),

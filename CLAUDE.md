@@ -48,14 +48,16 @@ POST /v1/messages          ──►  MessagesController
                                      ├── BedrockService (actor)
                                      └── AnthropicResponseTranslator (Bedrock → Anthropic SSE)
 
-GET /v1/models             ──►  ModelsController (static list of supported Claude models)
+GET /v1/models             ──►  ModelsController (live via listFoundationModels; static fallback)
 ```
 
 **Key design decisions:**
-- `BedrockService` is a Swift actor for thread-safe AWS client operations. It exposes three methods: `converse()` (non-streaming), `converseStream()` (for OpenAI SSE), and `converseStreamRaw()` (for Anthropic SSE, preserving raw Bedrock events).
+- `BedrockService` is a Swift actor for thread-safe AWS client operations. It exposes four methods: `converse()` (non-streaming), `converseStream()` (for OpenAI SSE), `converseStreamRaw()` (for Anthropic SSE, preserving raw Bedrock events), and `listFoundationModels()` (management API, returns all provider model IDs).
+- `BedrockService` holds both a `BedrockRuntime` client (inference, `SotoBedrockRuntime`) and a `Bedrock` client (management, `SotoBedrock`), sharing the same underlying `AWSClient`.
+- `ModelsController` fetches the live model list from `listFoundationModels` when real AWS credentials are present, deriving `owned_by` from the model ID prefix (`anthropic.` → `"anthropic"`, `amazon.` → `"amazon"`, etc.). It falls back to a hardcoded static list when using a Bedrock API key, when no `BedrockService` is initialised (tests), or when the API call fails. The `FoundationModelListable` protocol enables mock injection in tests.
 - The Anthropic `/v1/messages` routes bypass `APIKeyMiddleware` because Xcode Coding Agent manages its own authentication.
 - Bedrock requires strict user/assistant turn alternation — `RequestTranslator` handles merging/reordering as needed.
-- Model aliases (e.g., `gpt-4`, `claude-sonnet-4-5`) are resolved to full Bedrock cross-region inference profile IDs in `ModelMapper`.
+- Model aliases (e.g., `gpt-4`, `claude-sonnet-4-5`, `nova-pro`) are resolved to full Bedrock cross-region inference profile IDs in `ModelMapper`.
 
 ## Source Layout
 
@@ -64,7 +66,7 @@ GET /v1/models             ──►  ModelsController (static list of supported
 | `Sources/App/configure.swift` | App bootstrap — initializes `BedrockService`, sets 32MB body limit |
 | `Sources/App/routes.swift` | Route registration, applies `APIKeyMiddleware` selectively |
 | `Sources/App/Controllers/` | HTTP endpoint handlers (Chat, Messages, Models) |
-| `Sources/App/Services/BedrockService.swift` | Actor wrapping Soto's `BedrockRuntime` client |
+| `Sources/App/Services/BedrockService.swift` | Actor wrapping Soto's `BedrockRuntime` (inference) and `Bedrock` (management) clients; defines `FoundationModelListable` protocol |
 | `Sources/App/Services/Configuration.swift` | `AppConfiguration` (env vars) and `ModelMapper` (alias resolution) |
 | `Sources/App/Translation/` | Protocol converters between OpenAI, Anthropic, and Bedrock formats |
 | `Sources/App/Models/` | Codable structs for OpenAI and Anthropic wire formats |
@@ -85,7 +87,7 @@ GET /v1/models             ──►  ModelsController (static list of supported
 ## Key Dependencies
 
 - **Vapor** (≥4.115.0) — HTTP server framework
-- **Soto / SotoBedrockRuntime** (≥7.0.0) — AWS SDK for Swift; used only for `BedrockRuntime.converse()` and `BedrockRuntime.converseStream()`
+- **Soto / SotoBedrockRuntime + SotoBedrock** (≥7.0.0) — AWS SDK for Swift; `SotoBedrockRuntime` for inference (`converse`, `converseStream`); `SotoBedrock` for the management plane (`listFoundationModels`)
 
 ---
 

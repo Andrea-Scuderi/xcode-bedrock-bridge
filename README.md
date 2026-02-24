@@ -70,11 +70,14 @@ The IAM user/role needs these permissions:
   "Effect": "Allow",
   "Action": [
     "bedrock:InvokeModel",
-    "bedrock:InvokeModelWithResponseStream"
+    "bedrock:InvokeModelWithResponseStream",
+    "bedrock:ListFoundationModels"
   ],
   "Resource": "*"
 }
 ```
+
+> `bedrock:ListFoundationModels` is only needed for the live model list on `GET /v1/models`. If it is missing the endpoint falls back to the built-in static list automatically.
 
 ### 3. Run
 
@@ -126,7 +129,7 @@ curl -N -X POST http://localhost:8080/v1/chat/completions \
    - **Base URL:** `http://localhost:8080` *(do not add `/v1` — Xcode appends it)*
    - **API Key:** value of `PROXY_API_KEY` (or leave blank if auth is disabled)
    - **API Key Header:** `x-api-key`
-4. Select a model from the list (e.g. `us.anthropic.claude-sonnet-4-5-20250929-v1:0`)
+4. Select a model from the list (e.g. `us.anthropic.claude-sonnet-4-5-20250929-v1:0` or `us.amazon.nova-pro-v1:0`)
 
 ### Xcode Coding Agent
 
@@ -156,7 +159,11 @@ defaults write com.apple.dt.Xcode IDEChatClaudeAgentAPIKeyOverride ' '
 
 ## Available models
 
-All models use cross-region inference profile IDs (`us.` prefix), which support on-demand throughput without provisioning.
+When the proxy is running with real AWS credentials, `GET /v1/models` returns a **live list** of all foundation models available in the configured region (fetched from the Bedrock management API). When using a Bedrock API key or when the management API call fails, it falls back to the built-in static list below.
+
+All static fallback IDs use cross-region inference profiles (`us.` prefix) for on-demand throughput.
+
+### Anthropic Claude
 
 | Model | ID |
 |---|---|
@@ -173,7 +180,15 @@ All models use cross-region inference profile IDs (`us.` prefix), which support 
 | Claude 3 Opus | `us.anthropic.claude-3-opus-20240229-v1:0` |
 | Claude 3 Haiku | `us.anthropic.claude-3-haiku-20240307-v1:0` |
 
-You can also use common aliases (`claude-sonnet-4-5`, `gpt-4`, `gpt-3.5-turbo`, etc.) — see [SPECS.md](SPECS.md) for the full mapping table.
+### Amazon Nova
+
+| Model | ID |
+|---|---|
+| Amazon Nova Pro | `us.amazon.nova-pro-v1:0` |
+| Amazon Nova Lite | `us.amazon.nova-lite-v1:0` |
+| Amazon Nova Micro | `us.amazon.nova-micro-v1:0` |
+
+You can also use short aliases (`claude-sonnet-4-5`, `nova-pro`, `gpt-4`, `gpt-3.5-turbo`, etc.) — see [SPECS.md](SPECS.md) for the full mapping table.
 
 > **Enable model access first.** Go to the [AWS Bedrock console](https://console.aws.amazon.com/bedrock/) → **Model access** and request access for each model you want to use. Without this step requests will fail with a `ResourceNotFoundException`.
 

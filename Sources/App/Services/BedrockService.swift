@@ -1,10 +1,20 @@
 import Vapor
 import SotoCore
 import SotoBedrockRuntime
+import SotoBedrock
+
+// MARK: - Protocol
+
+protocol FoundationModelListable: Sendable {
+    func listFoundationModels() async throws -> [String]
+}
+
+// MARK: - Actor
 
 actor BedrockService {
     private let client: AWSClient
     let runtime: BedrockRuntime
+    let bedrock: Bedrock
 
     init(region: String, profile: String? = nil, bedrockAPIKey: String? = nil) {
         if let apiKey = bedrockAPIKey {
@@ -21,6 +31,7 @@ actor BedrockService {
             self.client = AWSClient(credentialProvider: credentialProvider)
         }
         self.runtime = BedrockRuntime(client: client, region: .init(rawValue: region))
+        self.bedrock = Bedrock(client: client, region: .init(rawValue: region))
     }
 
     deinit {
@@ -125,7 +136,19 @@ actor BedrockService {
             }
         }
     }
+
+    // MARK: - Foundation Models
+
+    func listFoundationModels() async throws -> [String] {
+        let input = Bedrock.ListFoundationModelsRequest()
+        let response = try await bedrock.listFoundationModels(input)
+        return (response.modelSummaries ?? []).map(\.modelId)
+    }
 }
+
+// MARK: - FoundationModelListable Conformance
+
+extension BedrockService: FoundationModelListable {}
 
 // MARK: - Error Mapping
 

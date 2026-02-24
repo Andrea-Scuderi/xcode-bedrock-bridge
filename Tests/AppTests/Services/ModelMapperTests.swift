@@ -57,4 +57,25 @@ struct ModelMapperTests {
     func emptyStringFallsToDefault() {
         #expect(mapper.bedrockModelID(for: "") == "us.anthropic.claude-sonnet-4-5-20250929-v1:0")
     }
+
+    @Test("nova-pro alias resolves to Amazon Nova Pro")
+    func novaProAliasResolvesToAmazonNovaPro() {
+        #expect(mapper.bedrockModelID(for: "nova-pro") == "us.amazon.nova-pro-v1:0")
+    }
+
+    @Test("nova-lite alias resolves to Amazon Nova Lite")
+    func novaLiteAliasResolvesToAmazonNovaLite() {
+        #expect(mapper.bedrockModelID(for: "nova-lite") == "us.amazon.nova-lite-v1:0")
+    }
+
+    @Test("nova-micro alias resolves to Amazon Nova Micro")
+    func novaMicroAliasResolvesToAmazonNovaMicro() {
+        #expect(mapper.bedrockModelID(for: "nova-micro") == "us.amazon.nova-micro-v1:0")
+    }
+
+    @Test("us.amazon. cross-region model ID passes through unchanged")
+    func passthroughUsAmazonCrossRegionID() {
+        let nativeID = "us.amazon.nova-pro-v1:0"
+        #expect(mapper.bedrockModelID(for: nativeID) == nativeID)
+    }
 }
