@@ -85,4 +85,43 @@ struct APIKeyMiddlewareTests {
             #expect(res.status == .unauthorized)
         }
     }
+
+    @Test("allows lowercase bearer prefix (RFC 7235 case-insensitive scheme)")
+    func allowsLowercaseBearerPrefix() async throws {
+        let app = try await Application.make(.testing)
+        defer { Task { try await app.asyncShutdown() } }
+        let protected = app.grouped(APIKeyMiddleware(requiredKey: "secret"))
+        try protected.register(collection: ModelsController())
+
+        var headers = HTTPHeaders()
+        headers.add(name: .authorization, value: "bearer secret")
+
+        try await app.test(.GET, "/v1/models", headers: headers) { res async in
+            #expect(res.status == .ok)
+        }
+    }
+
+    @Test("blocks key that differs only in last byte (timing-safe comparison)")
+    func blocksKeyWithLastByteDifference() async throws {
+        let app = try await Application.make(.testing)
+        defer { Task { try await app.asyncShutdown() } }
+        let protected = app.grouped(APIKeyMiddleware(requiredKey: "secretA"))
+        try protected.register(collection: ModelsController())
+
+        try await app.test(.GET, "/v1/models", headers: ["x-api-key": "secretB"]) { res async in
+            #expect(res.status == .unauthorized)
+        }
+    }
+
+    @Test("blocks key with same prefix but longer length")
+    func blocksKeyWithSamePrefixButLonger() async throws {
+        let app = try await Application.make(.testing)
+        defer { Task { try await app.asyncShutdown() } }
+        let protected = app.grouped(APIKeyMiddleware(requiredKey: "secret"))
+        try protected.register(collection: ModelsController())
+
+        try await app.test(.GET, "/v1/models", headers: ["x-api-key": "secretXXX"]) { res async in
+            #expect(res.status == .unauthorized)
+        }
+    }
 }

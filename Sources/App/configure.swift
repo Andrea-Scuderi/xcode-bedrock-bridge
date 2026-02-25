@@ -26,8 +26,11 @@ public func configure(_ app: Application) async throws {
     }
     app.logger.info("Default Bedrock model: \(config.defaultBedrockModel)")
     app.logger.info("Port: \(config.port)")
-    if config.proxyAPIKey != nil {
+    if let key = config.proxyAPIKey {
         app.logger.info("API key authentication: enabled")
+        if key.count < 16 {
+            app.logger.warning("PROXY_API_KEY is shorter than 16 characters — use a longer, random key in production")
+        }
     } else {
         app.logger.warning("API key authentication: DISABLED (set PROXY_API_KEY to enable)")
     }

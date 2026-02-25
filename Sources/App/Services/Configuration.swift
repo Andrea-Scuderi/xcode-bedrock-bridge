@@ -17,6 +17,8 @@ struct AppConfiguration: Sendable {
         defaultBedrockModel = Environment.get("DEFAULT_BEDROCK_MODEL")
             ?? "us.anthropic.claude-sonnet-4-5-20250929-v1:0"
         proxyAPIKey = Environment.get("PROXY_API_KEY")
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .flatMap { $0.isEmpty ? nil : $0 }
         port = Int(Environment.get("PORT") ?? "8080") ?? 8080
     }
 }
