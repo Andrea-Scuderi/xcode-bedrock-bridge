@@ -1,13 +1,13 @@
 {
-  "originHash" : "2e97afe6b8db254d7e490bdaccbcf85997ac68b0a1b8a1055a4b74a22da0fdd8",
+  "originHash" : "cc3e7dc74a998ae58cd63548c76b5cce7bac4904adba00b567d42e1cc6158f2d",
   "pins" : [
     {
       "identity" : "async-http-client",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/swift-server/async-http-client.git",
       "state" : {
-        "revision" : "52ed9d172018e31f2dbb46f0d4f58d66e13c281e",
-        "version" : "1.31.0"
+        "revision" : "2fc4652fb4689eb24af10e55cabaa61d8ba774fd",
+        "version" : "1.32.0"
       }
     },
     {
@@ -58,10 +58,10 @@
     {
       "identity" : "soto",
       "kind" : "remoteSourceControl",
-      "location" : "https://github.com/soto-project/soto.git",
+      "location" : "https://github.com/andrea-scuderi/soto.git",
       "state" : {
-        "revision" : "e67559846e8f746bcab2ad889e0a749bb29d44d5",
-        "version" : "7.12.0"
+        "branch" : "fix-tool_use",
+        "revision" : "abf763b117283dec34fe9daf47948334d15e255d"
       }
     },
     {
@@ -69,8 +69,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/soto-project/soto-core.git",
       "state" : {
-        "revision" : "510e4ca86264267cfae1df066780706ca6cc4a5f",
-        "version" : "7.11.1"
+        "revision" : "f207d2f9ae5439e197d79e0ddfd5b07064798218",
+        "version" : "7.12.0"
       }
     },
     {
@@ -276,8 +276,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/vapor/vapor.git",
       "state" : {
-        "revision" : "6d06e13021c299aa3300986f4eb5bb143d17ac9b",
-        "version" : "4.121.2"
+        "revision" : "a8db2dbda8b3cdc8a61bd35128590bd296e85563",
+        "version" : "4.121.3"
       }
     },
     {

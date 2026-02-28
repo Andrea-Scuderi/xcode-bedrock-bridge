@@ -2,6 +2,15 @@ import Vapor
 import Foundation
 import SotoBedrockRuntime
 
+// MARK: - Input guardrail limits
+
+private let maxMessages        = 100
+private let maxModelNameLength = 128
+private let maxToolCount       = 50
+private let maxToolNameLength  = 64
+private let maxSystemTextLength   = 32_768   // chars (~32k tokens)
+private let maxMessageTextLength  = 65_536   // chars per content block
+
 struct MessagesController: RouteCollection {
     let bedrockService: any BedrockConversable
     let modelMapper: ModelMapper
@@ -17,11 +26,47 @@ struct MessagesController: RouteCollection {
 
     @Sendable
     func messages(req: Request) async throws -> Response {
+        let request = try req.content.decode(AnthropicRequest.self)
+
         if let body = req.body.string {
             req.logger.debug("Xcode /v1/messages payload: \(body)")
         }
 
-        let request = try req.content.decode(AnthropicRequest.self)
+        guard request.model.count <= maxModelNameLength else {
+            throw Abort(.badRequest, reason: "Model name too long (max \(maxModelNameLength) chars).")
+        }
+
+        guard request.messages.count <= maxMessages else {
+            throw Abort(.badRequest, reason: "Too many messages (max \(maxMessages)).")
+        }
+
+        if let tools = request.tools, !tools.isEmpty {
+            guard tools.count <= maxToolCount else {
+                throw Abort(.badRequest, reason: "Too many tools (max \(maxToolCount)).")
+            }
+            for tool in tools {
+                guard tool.name.count <= maxToolNameLength else {
+                    throw Abort(.badRequest, reason: "Tool name too long (max \(maxToolNameLength) chars).")
+                }
+            }
+        }
+
+        if let system = request.system {
+            guard system.plainText.count <= maxSystemTextLength else {
+                throw Abort(.badRequest, reason: "System prompt exceeds maximum allowed length of \(maxSystemTextLength) chars.")
+            }
+        }
+
+        for msg in request.messages {
+            for block in msg.content.blocks {
+                if let text = block.text {
+                    guard text.count <= maxMessageTextLength else {
+                        throw Abort(.badRequest, reason: "Message content exceeds maximum allowed length of \(maxMessageTextLength) chars.")
+                    }
+                }
+            }
+        }
+
         let modelID = modelMapper.bedrockModelID(for: request.model)
         req.logger.debug("bedrockModelID: \(request.model) → \(modelID)")
         let messageID = "msg_\(UUID().uuidString.replacingOccurrences(of: "-", with: ""))"
@@ -121,18 +166,18 @@ struct MessagesController: RouteCollection {
         response.headers.replaceOrAdd(name: "X-Accel-Buffering", value: "no")
 
         response.body = .init(asyncStream: { writer in
-            let messageStartSSE = translator.messageStartSSE(messageID: messageID, model: model)
-            logger.debug("Streaming messageStart")
-            try await writer.writeBuffer(ByteBuffer(string: messageStartSSE))
-
-            let pingSSE = translator.pingSSE()
-            logger.debug("Streaming ping")
-            try await writer.writeBuffer(ByteBuffer(string: pingSSE))
-
-            var stopReason = "end_turn"
-            var outputTokens = 0
-
             do {
+                let messageStartSSE = translator.messageStartSSE(messageID: messageID, model: model)
+                logger.debug("Streaming messageStart")
+                try await writer.writeBuffer(ByteBuffer(string: messageStartSSE))
+
+                let pingSSE = translator.pingSSE()
+                logger.debug("Streaming ping")
+                try await writer.writeBuffer(ByteBuffer(string: pingSSE))
+
+                var stopReason = "end_turn"
+                var outputTokens = 0
+
                 for try await event in rawStream {
                     switch event {
                     case .messageStop(let e):
@@ -146,6 +191,10 @@ struct MessagesController: RouteCollection {
                         }
                     }
                 }
+
+                let finalSSE = translator.finalSSE(stopReason: stopReason, outputTokens: outputTokens)
+                logger.debug("Streaming finalSSE stopReason=\(stopReason) outputTokens=\(outputTokens)")
+                try await writer.writeBuffer(ByteBuffer(string: finalSSE))
             } catch {
                 let msg = String(describing: error)
                     .replacingOccurrences(of: "\\", with: "\\\\")
@@ -155,15 +204,9 @@ struct MessagesController: RouteCollection {
                     .replacingOccurrences(of: "\t", with: "\\t")
                 let errorSSE = "event: error\ndata: {\"type\":\"error\",\"error\":{\"type\":\"api_error\",\"message\":\"\(msg)\"}}\n\n"
                 logger.debug("Streaming error: \(msg)")
-                try await writer.writeBuffer(ByteBuffer(string: errorSSE))
-                try await writer.write(.end)
-                return
+                try? await writer.writeBuffer(ByteBuffer(string: errorSSE))
             }
-
-            let finalSSE = translator.finalSSE(stopReason: stopReason, outputTokens: outputTokens)
-            logger.debug("Streaming finalSSE stopReason=\(stopReason) outputTokens=\(outputTokens)")
-            try await writer.writeBuffer(ByteBuffer(string: finalSSE))
-            try await writer.write(.end)
+            try? await writer.write(.end)
         })
 
         return response

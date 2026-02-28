@@ -89,6 +89,55 @@ private func minimalStreamEvents() -> [BedrockRuntime.ConverseStreamOutput] {
     ]
 }
 
+private func toolUseConverseResponse() -> BedrockRuntime.ConverseResponse {
+    BedrockRuntime.ConverseResponse(
+        metrics: BedrockRuntime.ConverseMetrics(latencyMs: 0),
+        output: BedrockRuntime.ConverseOutput(
+            message: BedrockRuntime.Message(
+                content: [
+                    .text("I'll read that file."),
+                    .toolUse(BedrockRuntime.ToolUseBlock(
+                        input: .map(["filePath": .string("src/main.swift")]),
+                        name: "XcodeRead",
+                        toolUseId: "tooluse_abc123",
+                        type: .toolUse
+                    ))
+                ],
+                role: .assistant
+            )
+        ),
+        stopReason: .toolUse,
+        usage: BedrockRuntime.TokenUsage(inputTokens: 100, outputTokens: 50, totalTokens: 150)
+    )
+}
+
+private func toolUseStreamEvents() -> [BedrockRuntime.ConverseStreamOutput] {
+    [
+        .contentBlockStart(BedrockRuntime.ContentBlockStartEvent(
+            contentBlockIndex: 0,
+            start: .toolUse(BedrockRuntime.ToolUseBlockStart(
+                name: "XcodeRead",
+                toolUseId: "tooluse_abc123",
+                type: .toolUse
+            ))
+        )),
+        .contentBlockDelta(BedrockRuntime.ContentBlockDeltaEvent(
+            contentBlockIndex: 0,
+            delta: .toolUse(BedrockRuntime.ToolUseBlockDelta(input: "{\"filePath\":\"src/main.swift\"}"))
+        )),
+        .contentBlockStop(BedrockRuntime.ContentBlockStopEvent(
+            contentBlockIndex: 0
+        )),
+        .messageStop(BedrockRuntime.MessageStopEvent(
+            stopReason: .toolUse
+        )),
+        .metadata(BedrockRuntime.ConverseStreamMetadataEvent(
+            metrics: BedrockRuntime.ConverseStreamMetrics(latencyMs: 0),
+            usage: BedrockRuntime.TokenUsage(inputTokens: 100, outputTokens: 50, totalTokens: 150)
+        )),
+    ]
+}
+
 // MARK: - Token Counting Tests
 
 @Suite("MessagesController Token Counting")
@@ -271,6 +320,59 @@ struct MessagesControllerNonStreamingTests {
             #expect(res.status == .tooManyRequests)
         }
     }
+
+    @Test("tool_use response has stop_reason tool_use")
+    func toolUseResponseHasToolUseStopReason() async throws {
+        let app = try await makeApp(behavior: .success(toolUseConverseResponse()))
+        defer { Task { try await app.asyncShutdown() } }
+
+        var headers = HTTPHeaders()
+        headers.contentType = .json
+
+        try await app.test(.POST, "/v1/messages", headers: headers, body: ByteBuffer(string: validBody)) { res async in
+            #expect(res.status == .ok)
+            if let resp = try? res.content.decode(AnthropicResponse.self) {
+                #expect(resp.stopReason == "tool_use")
+            }
+        }
+    }
+
+    @Test("tool_use response content includes text and tool_use blocks")
+    func toolUseResponseContentIncludesTextAndToolUseBlocks() async throws {
+        let app = try await makeApp(behavior: .success(toolUseConverseResponse()))
+        defer { Task { try await app.asyncShutdown() } }
+
+        var headers = HTTPHeaders()
+        headers.contentType = .json
+
+        try await app.test(.POST, "/v1/messages", headers: headers, body: ByteBuffer(string: validBody)) { res async in
+            #expect(res.status == .ok)
+            if let resp = try? res.content.decode(AnthropicResponse.self) {
+                let types = resp.content.map(\.type)
+                #expect(types.contains("text"))
+                #expect(types.contains("tool_use"))
+            }
+        }
+    }
+
+    @Test("tool_use block has correct id name and input")
+    func toolUseBlockHasCorrectIdNameAndInput() async throws {
+        let app = try await makeApp(behavior: .success(toolUseConverseResponse()))
+        defer { Task { try await app.asyncShutdown() } }
+
+        var headers = HTTPHeaders()
+        headers.contentType = .json
+
+        try await app.test(.POST, "/v1/messages", headers: headers, body: ByteBuffer(string: validBody)) { res async in
+            #expect(res.status == .ok)
+            if let resp = try? res.content.decode(AnthropicResponse.self),
+               let toolBlock = resp.content.first(where: { $0.type == "tool_use" }) {
+                #expect(toolBlock.id == "tooluse_abc123")
+                #expect(toolBlock.name == "XcodeRead")
+                #expect(toolBlock.input == .object(["filePath": .string("src/main.swift")]))
+            }
+        }
+    }
 }
 
 // MARK: - Streaming Tests
@@ -361,6 +463,53 @@ struct MessagesControllerStreamingTests {
 
         try await app.test(.POST, "/v1/messages", headers: headers, body: ByteBuffer(string: streamingBody)) { res async in
             #expect(res.status == .tooManyRequests)
+        }
+    }
+
+    @Test("tool_use stream emits content_block_start with type tool_use")
+    func toolUseStreamEmitsContentBlockStart() async throws {
+        let app = try await makeApp(behavior: .streamSuccess(toolUseStreamEvents()))
+        defer { Task { try await app.asyncShutdown() } }
+
+        var headers = HTTPHeaders()
+        headers.contentType = .json
+
+        try await app.test(.POST, "/v1/messages", headers: headers, body: ByteBuffer(string: streamingBody)) { res async in
+            let body = res.body.string
+            #expect(body.contains("content_block_start"))
+            #expect(body.contains("\"type\":\"tool_use\""))
+            #expect(body.contains("\"id\":\"tooluse_abc123\""))
+            #expect(body.contains("\"name\":\"XcodeRead\""))
+        }
+    }
+
+    @Test("tool_use stream emits input_json_delta")
+    func toolUseStreamEmitsInputJsonDelta() async throws {
+        let app = try await makeApp(behavior: .streamSuccess(toolUseStreamEvents()))
+        defer { Task { try await app.asyncShutdown() } }
+
+        var headers = HTTPHeaders()
+        headers.contentType = .json
+
+        try await app.test(.POST, "/v1/messages", headers: headers, body: ByteBuffer(string: streamingBody)) { res async in
+            let body = res.body.string
+            #expect(body.contains("content_block_delta"))
+            #expect(body.contains("input_json_delta"))
+        }
+    }
+
+    @Test("tool_use stream emits message_delta with stop_reason tool_use")
+    func toolUseStreamEmitsToolUseStopReason() async throws {
+        let app = try await makeApp(behavior: .streamSuccess(toolUseStreamEvents()))
+        defer { Task { try await app.asyncShutdown() } }
+
+        var headers = HTTPHeaders()
+        headers.contentType = .json
+
+        try await app.test(.POST, "/v1/messages", headers: headers, body: ByteBuffer(string: streamingBody)) { res async in
+            let body = res.body.string
+            #expect(body.contains("message_delta"))
+            #expect(body.contains("\"stop_reason\":\"tool_use\""))
         }
     }
 }

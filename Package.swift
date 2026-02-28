@@ -8,7 +8,7 @@ let package = Package(
     ],
     dependencies: [
         .package(url: "https://github.com/vapor/vapor.git", from: "4.115.0"),
-        .package(url: "https://github.com/soto-project/soto.git", from: "7.0.0"),
+        .package(url: "https://github.com/andrea-scuderi/soto.git", branch: "fix-tool_use"),
     ],
     targets: [
         .target(
