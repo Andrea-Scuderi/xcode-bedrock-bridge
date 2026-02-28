@@ -1,11 +1,9 @@
 # xcode-bedrock-bridge
 
-> 🚧**Work in Progress** — This project is under active development. APIs, configuration, and behaviour may change without notice.
-
 ```
-[ Xcode ] <───(Swift)───> [ Bedrock Bridge ] <───(IAM/HTTPS/API-Key)───> [ Amazon Bedrock ]
-   |                             |                                               |
- Local Dev                Security & Proxy                                   Cloud LLMs
+[ Xcode ] <───(PROXY_API_KEY)───> [ xcode-bedrock-bridge ] <───(IAM/BEDROCK_API_KEY)───> [ Amazon Bedrock ]
+    |                                      |                                                   |
+ Local Dev                          Security & Proxy                                       Cloud LLMs
 ```
 
 Xcode Bedrock Bridge is a lightweight, high-performance proxy designed to connect your Apple development environment directly to Large Language Models on AWS.
@@ -36,6 +34,14 @@ Both Xcode integration modes are covered:
 |---|---|---|
 | **Xcode Intelligence** — inline completions, editor chat | OpenAI | `GET /v1/models`, `POST /v1/chat/completions` |
 | **Xcode Coding Agent** — agentic coding with tools | Anthropic Messages | `POST /v1/messages`, `POST /v1/messages/count_tokens` |
+
+**What it supports:**
+- Streaming and non-streaming completions (SSE)
+- Image input (JPEG, PNG, GIF, WebP — up to 3.75 MB) on capable models
+- Tool use / function calling (Anthropic Coding Agent)
+- Token counting (`POST /v1/messages/count_tokens`)
+- Live model discovery via `Bedrock:ListFoundationModels`
+- Three authentication methods: AWS profile, access key/secret, or Bedrock API key
 
 ---
 
@@ -71,6 +77,12 @@ export AWS_ACCESS_KEY_ID=AKIA...
 export AWS_SECRET_ACCESS_KEY=...
 export AWS_SESSION_TOKEN=...          # only for temporary credentials
 ```
+
+**Option C — Bedrock API key:**
+```bash
+export BEDROCK_API_KEY=your-bedrock-api-key
+```
+> With a Bedrock API key the live model list is unavailable; the proxy falls back to the built-in model list automatically.
 
 The IAM user/role needs these permissions:
 ```json
@@ -188,6 +200,16 @@ defaults write com.apple.dt.Xcode IDEChatClaudeAgentAPIKeyOverride ' '
 You can also send short aliases directly (`claude-sonnet-4-5`, `nova-pro`, `gpt-4`, etc.) in API requests — see [SPECS.md](SPECS.md) for the full alias and name-mapping tables.
 
 > **Enable model access first.** Go to the [AWS Bedrock console](https://console.aws.amazon.com/bedrock/) → **Model access** and request access for each model you want to use. Without this step requests will fail with a `ResourceNotFoundException`.
+
+---
+
+## Image input
+
+The proxy supports multi-modal image input on both the OpenAI (`/v1/chat/completions`) and Anthropic (`/v1/messages`) endpoints for models that accept images (Claude Sonnet 4.x / Haiku 4.x / Opus 4.x, Nova Pro / Lite, Llama 3.2 Vision, Pixtral Large).
+
+- **Formats:** JPEG, PNG, GIF, WebP
+- **Size limit:** 3.75 MB per image (decoded)
+- Images are passed as base64-encoded data URLs in the standard OpenAI / Anthropic format.
 
 ---
 
