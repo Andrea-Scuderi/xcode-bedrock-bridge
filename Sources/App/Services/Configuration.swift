@@ -1,3 +1,4 @@
+import Configuration
 import Vapor
 
 // MARK: - App Configuration
@@ -20,6 +21,35 @@ struct AppConfiguration: Sendable {
             .map { $0.trimmingCharacters(in: .whitespaces) }
             .flatMap { $0.isEmpty ? nil : $0 }
         port = Int(Environment.get("PORT") ?? "8080") ?? 8080
+    }
+
+    /// Reads all values from a pre-built ConfigReader.
+    private init(reader: ConfigReader) {
+        awsRegion = reader.string(forKey: "aws.region") ?? "us-east-1"
+        awsProfile = reader.string(forKey: "profile")
+        bedrockAPIKey = reader.string(forKey: "bedrock.api.key")
+        defaultBedrockModel = reader.string(forKey: "default.bedrock.model")
+            ?? "us.anthropic.claude-sonnet-4-5-20250929-v1:0"
+        proxyAPIKey = reader.string(forKey: "proxy.api.key")
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .flatMap { $0.isEmpty ? nil : $0 }
+        port = reader.int(forKey: "port") ?? 8080
+    }
+
+    /// Async factory — three-provider chain: process env > .env dotenv > config.json.
+    /// Both files are optional; missing files are silently ignored.
+    static func load() async throws -> AppConfiguration {
+        let envProvider = EnvironmentVariablesProvider()
+        let dotenvProvider = try await EnvironmentVariablesProvider(
+            environmentFilePath: ".env",
+            allowMissing: true
+        )
+        let jsonProvider = try await FileProvider<JSONSnapshot>(
+            filePath: "config.json",
+            allowMissing: true
+        )
+        let reader = ConfigReader(providers: [envProvider, dotenvProvider, jsonProvider])
+        return AppConfiguration(reader: reader)
     }
 }
 

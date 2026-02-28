@@ -8,5 +8,7 @@ DerivedData/
 .netrc
 
 .build/
-.claude/
 .sourcekit-lsp/
+
+.env
+config.json

@@ -26,16 +26,6 @@ struct MessagesController: RouteCollection {
 
     @Sendable
     func messages(req: Request) async throws -> Response {
-        // Pre-validate JSON nesting depth before Codable decoding.
-        // JSONSerialization enforces a ~512-level nesting limit, preventing
-        // stack exhaustion from crafted deeply-nested tool inputSchema payloads.
-        if let bodyData = req.body.data {
-            do {
-                _ = try JSONSerialization.jsonObject(with: bodyData, options: [])
-            } catch {
-                throw Abort(.badRequest, reason: "Invalid or excessively nested JSON.")
-            }
-        }
         let request = try req.content.decode(AnthropicRequest.self)
 
         if let body = req.body.string {

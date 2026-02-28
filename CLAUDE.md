@@ -74,7 +74,10 @@ GET /v1/models             ──►  ModelsController (live via listFoundationM
 | `Sources/App/Models/` | Codable structs for OpenAI and Anthropic wire formats |
 | `Sources/App/Middleware/APIKeyMiddleware.swift` | Optional `x-api-key` / `Authorization: Bearer` validation |
 
-## Configuration (Environment Variables)
+## Configuration
+
+Configuration is loaded in priority order: process env vars > `.env` (dotenv) > `config.json`
+(nested JSON). Both files are optional and gitignored.
 
 | Variable | Default | Description |
 |---|---|---|

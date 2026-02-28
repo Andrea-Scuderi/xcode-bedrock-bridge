@@ -9,6 +9,7 @@ let package = Package(
     dependencies: [
         .package(url: "https://github.com/vapor/vapor.git", from: "4.115.0"),
         .package(url: "https://github.com/andrea-scuderi/soto.git", branch: "fix-tool_use"),
+        .package(url: "https://github.com/apple/swift-configuration", from: "1.0.0"),
     ],
     targets: [
         .target(
@@ -17,6 +18,7 @@ let package = Package(
                 .product(name: "Vapor", package: "vapor"),
                 .product(name: "SotoBedrockRuntime", package: "soto"),
                 .product(name: "SotoBedrock", package: "soto"),
+                .product(name: "Configuration", package: "swift-configuration")
             ],
             path: "Sources/App"
         ),

@@ -610,6 +610,13 @@ data: {"type":"error","error":{"type":"api_error","message":"<message>"}}
 
 ## 9. Configuration Reference
 
+Configuration is loaded in priority order:
+1. Process environment variables (highest priority)
+2. `.env` file — dotenv `KEY=VALUE` format (read with `EnvironmentVariablesProvider`)
+3. `config.json` file — nested JSON (read with `FileProvider<JSONSnapshot>`)
+
+Both files are optional and gitignored. The first non-nil value from the highest-priority source wins.
+
 | Environment Variable | Required | Default | Description |
 |---|---|---|---|
 | `BEDROCK_API_KEY` | No† | — | Bedrock API key; sent as `Authorization: Bearer <key>`. Overrides all AWS credential options. |
@@ -639,6 +646,24 @@ swift run Run
 export AWS_REGION=us-east-1
 export BEDROCK_API_KEY=your-bedrock-api-key
 export PROXY_API_KEY=my-secret-key  # optional
+swift run Run
+```
+
+**Run with dotenv file:**
+```bash
+cat > .env <<'EOF'
+AWS_REGION=us-east-1
+PROFILE=bedrock-dev
+PROXY_API_KEY=my-secret-key
+EOF
+swift run Run
+```
+
+**Run with config.json:**
+```bash
+cat > config.json <<'EOF'
+{"aws":{"region":"us-east-1"},"proxy":{"api":{"key":"my-secret-key"}}}
+EOF
 swift run Run
 ```
 

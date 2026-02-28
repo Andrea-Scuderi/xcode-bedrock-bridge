@@ -193,7 +193,11 @@ You can also send short aliases directly (`claude-sonnet-4-5`, `nova-pro`, `gpt-
 
 ## Configuration
 
-All configuration is via environment variables.
+Configuration is resolved in priority order: **process environment variables** win, then `.env`
+(dotenv format, `KEY=VALUE`), then `config.json` (nested JSON). Both files are optional and
+gitignored — the server starts with env vars only if neither file is present.
+
+### Environment variables
 
 | Variable | Default | Description |
 |---|---|---|
@@ -206,6 +210,31 @@ All configuration is via environment variables.
 | `PROXY_API_KEY` | — | Auth key for OpenAI endpoints. Auth disabled if unset. |
 | `PORT` | `8080` | HTTP listen port |
 | `LOG_LEVEL` | `info` | Vapor log level (`debug` shows raw Xcode payloads) |
+
+### `.env` file (dotenv, optional, gitignored)
+
+Create `.env` in the project root directory using standard `KEY=VALUE` format:
+
+```
+AWS_REGION=us-east-1
+PROFILE=my-bedrock-profile
+PROXY_API_KEY=my-secret-key
+PORT=8080
+```
+
+### `config.json` file (JSON, optional, gitignored)
+
+Create `config.json` in the project root using nested keys:
+
+```json
+{
+  "aws": { "region": "us-east-1", "profile": "my-bedrock-profile" },
+  "bedrock": { "api": { "key": "..." } },
+  "default": { "bedrock": { "model": "us.anthropic.claude-sonnet-4-5-20250929-v1:0" } },
+  "proxy": { "api": { "key": "my-secret-key" } },
+  "port": 8080
+}
+```
 
 ---
 

@@ -1,7 +1,7 @@
 import Vapor
 
 public func configure(_ app: Application) async throws {
-    let config = AppConfiguration()
+    let config = try await AppConfiguration.load()
     app.appConfiguration = config
 
     // Bind to localhost only — the Anthropic /v1/messages endpoint is unauthenticated.
