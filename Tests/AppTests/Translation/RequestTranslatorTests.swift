@@ -6,6 +6,7 @@ import Foundation
 struct RequestTranslatorTests {
 
     let translator = RequestTranslator()
+    let mapper = ModelMapper(defaultModel: "us.anthropic.claude-sonnet-4-5-20250929-v1:0")
 
     @Test("system messages extracted from conversation")
     func extractsSystemMessages() throws {
@@ -21,7 +22,7 @@ struct RequestTranslatorTests {
             stream: nil,
             stop: nil
         )
-        let (system, messages, _) = try translator.translate(request: request, modelID: "model-id")
+        let (system, messages, _) = try translator.translate(request: request, modelID: "model-id", modelMapper: mapper)
         #expect(system.count == 1)
         #expect(messages.count == 1)
     }
@@ -40,7 +41,7 @@ struct RequestTranslatorTests {
             stream: nil,
             stop: nil
         )
-        let (_, messages, _) = try translator.translate(request: request, modelID: "model-id")
+        let (_, messages, _) = try translator.translate(request: request, modelID: "model-id", modelMapper: mapper)
         #expect(messages.count == 1)
     }
 
@@ -55,7 +56,7 @@ struct RequestTranslatorTests {
             stream: nil,
             stop: nil
         )
-        let (_, _, inferenceConfig) = try translator.translate(request: request, modelID: "model-id")
+        let (_, _, inferenceConfig) = try translator.translate(request: request, modelID: "model-id", modelMapper: mapper)
         #expect(inferenceConfig.maxTokens == 256)
         #expect(abs((inferenceConfig.temperature ?? 0) - Float(0.7)) < Float(0.001))
         #expect(abs((inferenceConfig.topP ?? 0) - Float(0.9)) < Float(0.001))
@@ -72,7 +73,7 @@ struct RequestTranslatorTests {
             stream: nil,
             stop: nil
         )
-        let (_, _, inferenceConfig) = try translator.translate(request: request, modelID: "model-id")
+        let (_, _, inferenceConfig) = try translator.translate(request: request, modelID: "model-id", modelMapper: mapper)
         #expect(inferenceConfig.maxTokens == 4096)
     }
 
@@ -87,7 +88,7 @@ struct RequestTranslatorTests {
             stream: nil,
             stop: nil
         )
-        let (_, _, inferenceConfig) = try translator.translate(request: request, modelID: "model-id")
+        let (_, _, inferenceConfig) = try translator.translate(request: request, modelID: "model-id", modelMapper: mapper)
         #expect(inferenceConfig.temperature == nil)
     }
 
@@ -105,7 +106,7 @@ struct RequestTranslatorTests {
             stream: nil,
             stop: nil
         )
-        let (_, messages, _) = try translator.translate(request: request, modelID: "model-id")
+        let (_, messages, _) = try translator.translate(request: request, modelID: "model-id", modelMapper: mapper)
         #expect(messages.count == 1)
     }
 
@@ -124,7 +125,7 @@ struct RequestTranslatorTests {
             stream: nil,
             stop: nil
         )
-        let (_, messages, _) = try translator.translate(request: request, modelID: "model-id")
+        let (_, messages, _) = try translator.translate(request: request, modelID: "model-id", modelMapper: mapper)
         #expect(messages.count == 3)
     }
 
@@ -143,7 +144,7 @@ struct RequestTranslatorTests {
             stream: nil,
             stop: nil
         )
-        let (_, messages, _) = try translator.translate(request: request, modelID: "model-id")
+        let (_, messages, _) = try translator.translate(request: request, modelID: "model-id", modelMapper: mapper)
         // "function" role is unknown → dropped; leaves two separate user messages
         #expect(messages.count == 2)
     }
@@ -168,7 +169,7 @@ struct RequestTranslatorTests {
             stop: nil
         )
         let modelID = "us.anthropic.claude-sonnet-4-5-20250929-v1:0"
-        let (_, messages, _) = try translator.translate(request: request, modelID: modelID)
+        let (_, messages, _) = try translator.translate(request: request, modelID: modelID, modelMapper: mapper)
         #expect(messages.count == 1)
         let content = messages[0].content
         // Should have a text block and an image block
@@ -197,7 +198,7 @@ struct RequestTranslatorTests {
             stop: nil
         )
         #expect(throws: ImageTranslationError.self) {
-            try translator.translate(request: request, modelID: "us.amazon.nova-micro-v1:0")
+            try translator.translate(request: request, modelID: "us.amazon.nova-micro-v1:0", modelMapper: mapper)
         }
     }
 
@@ -219,7 +220,7 @@ struct RequestTranslatorTests {
             stop: nil
         )
         #expect(throws: ImageTranslationError.self) {
-            try translator.translate(request: request, modelID: "us.anthropic.claude-sonnet-4-5-20250929-v1:0")
+            try translator.translate(request: request, modelID: "us.anthropic.claude-sonnet-4-5-20250929-v1:0", modelMapper: mapper)
         }
     }
 
@@ -243,7 +244,7 @@ struct RequestTranslatorTests {
             stop: nil
         )
         #expect(throws: ImageTranslationError.self) {
-            try translator.translate(request: request, modelID: "us.anthropic.claude-sonnet-4-5-20250929-v1:0")
+            try translator.translate(request: request, modelID: "us.anthropic.claude-sonnet-4-5-20250929-v1:0", modelMapper: mapper)
         }
     }
 
@@ -265,7 +266,8 @@ struct RequestTranslatorTests {
         )
         let (_, messages, _) = try translator.translate(
             request: request,
-            modelID: "us.anthropic.claude-sonnet-4-5-20250929-v1:0"
+            modelID: "us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+            modelMapper: mapper
         )
         #expect(messages.count == 1)
         let content = messages[0].content

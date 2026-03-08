@@ -68,10 +68,14 @@ struct MessagesController: RouteCollection {
         }
 
         let modelID = modelMapper.bedrockModelID(for: request.model)
-        req.logger.debug("bedrockModelID: \(request.model) → \(modelID)")
+        req.logger.info("bedrockModelID: \(request.model) → \(modelID)")
         let messageID = "msg_\(UUID().uuidString.replacingOccurrences(of: "-", with: ""))"
 
-        let (system, msgs, inferenceConfig, toolConfig) = try requestTranslator.translate(request: request, resolvedModelID: modelID)
+        let (system, msgs, inferenceConfig, toolConfig) = try requestTranslator.translate(
+            request: request,
+            resolvedModelID: modelID,
+            modelMapper: modelMapper
+        )
 
         if request.stream == true {
             return try await handleStreaming(

@@ -6,6 +6,7 @@ import SotoBedrockRuntime
 struct AnthropicRequestTranslatorTests {
 
     let translator = AnthropicRequestTranslator()
+    let mapper = ModelMapper(defaultModel: "us.anthropic.claude-sonnet-4-5-20250929-v1:0")
 
     private func makeRequest(
         system: AnthropicSystem? = nil,
@@ -36,7 +37,7 @@ struct AnthropicRequestTranslatorTests {
             system: .text("Be helpful"),
             messages: [AnthropicMessage(role: "user", content: .text("Hi"))]
         )
-        let (system, _, _, _) = try translator.translate(request: request, resolvedModelID: "some-model")
+        let (system, _, _, _) = try translator.translate(request: request, resolvedModelID: "some-model", modelMapper: mapper)
         #expect(system.count == 1)
     }
 
@@ -49,7 +50,7 @@ struct AnthropicRequestTranslatorTests {
             ]),
             messages: [AnthropicMessage(role: "user", content: .text("Hi"))]
         )
-        let (system, _, _, _) = try translator.translate(request: request, resolvedModelID: "some-model")
+        let (system, _, _, _) = try translator.translate(request: request, resolvedModelID: "some-model", modelMapper: mapper)
         #expect(system.count == 1)
         switch system[0] {
         case .text(let t):
@@ -66,7 +67,7 @@ struct AnthropicRequestTranslatorTests {
             system: nil,
             messages: [AnthropicMessage(role: "user", content: .text("Hi"))]
         )
-        let (system, _, _, _) = try translator.translate(request: request, resolvedModelID: "some-model")
+        let (system, _, _, _) = try translator.translate(request: request, resolvedModelID: "some-model", modelMapper: mapper)
         #expect(system.isEmpty)
     }
 
@@ -77,7 +78,7 @@ struct AnthropicRequestTranslatorTests {
                 AnthropicContentBlock.text("Hello")
             ]))]
         )
-        let (_, messages, _, _) = try translator.translate(request: request, resolvedModelID: "some-model")
+        let (_, messages, _, _) = try translator.translate(request: request, resolvedModelID: "some-model", modelMapper: mapper)
         #expect(messages.count == 1)
         #expect(messages.first?.content.count == 1)
     }
@@ -97,7 +98,7 @@ struct AnthropicRequestTranslatorTests {
         let request = makeRequest(
             messages: [AnthropicMessage(role: "user", content: .blocks([block]))]
         )
-        let (_, messages, _, _) = try translator.translate(request: request, resolvedModelID: "some-model")
+        let (_, messages, _, _) = try translator.translate(request: request, resolvedModelID: "some-model", modelMapper: mapper)
         #expect(messages.count == 1)
         guard let contentBlock = messages.first?.content.first else {
             Issue.record("Expected content block")
@@ -127,7 +128,7 @@ struct AnthropicRequestTranslatorTests {
         let request = makeRequest(
             messages: [AnthropicMessage(role: "user", content: .blocks([block]))]
         )
-        let (_, messages, _, _) = try translator.translate(request: request, resolvedModelID: "some-model")
+        let (_, messages, _, _) = try translator.translate(request: request, resolvedModelID: "some-model", modelMapper: mapper)
         #expect(messages.count == 1)
         guard let contentBlock = messages.first?.content.first else {
             Issue.record("Expected content block")
@@ -156,7 +157,7 @@ struct AnthropicRequestTranslatorTests {
         let request = makeRequest(
             messages: [AnthropicMessage(role: "user", content: .blocks([block]))]
         )
-        let (_, messages, _, _) = try translator.translate(request: request, resolvedModelID: "some-model")
+        let (_, messages, _, _) = try translator.translate(request: request, resolvedModelID: "some-model", modelMapper: mapper)
         // Message with no valid content blocks is dropped entirely
         #expect(messages.isEmpty)
     }
@@ -169,7 +170,7 @@ struct AnthropicRequestTranslatorTests {
             tools: [tool],
             toolChoice: AnthropicToolChoice(type: "auto", name: nil)
         )
-        let (_, _, _, toolConfig) = try translator.translate(request: request, resolvedModelID: "some-model")
+        let (_, _, _, toolConfig) = try translator.translate(request: request, resolvedModelID: "some-model", modelMapper: mapper)
         guard let tc = toolConfig else {
             Issue.record("Expected non-nil toolConfig")
             return
@@ -194,7 +195,7 @@ struct AnthropicRequestTranslatorTests {
             tools: [tool],
             toolChoice: AnthropicToolChoice(type: "any", name: nil)
         )
-        let (_, _, _, toolConfig) = try translator.translate(request: request, resolvedModelID: "some-model")
+        let (_, _, _, toolConfig) = try translator.translate(request: request, resolvedModelID: "some-model", modelMapper: mapper)
         guard let tc = toolConfig else {
             Issue.record("Expected non-nil toolConfig")
             return
@@ -219,7 +220,7 @@ struct AnthropicRequestTranslatorTests {
             tools: [tool],
             toolChoice: AnthropicToolChoice(type: "tool", name: "my_tool")
         )
-        let (_, _, _, toolConfig) = try translator.translate(request: request, resolvedModelID: "some-model")
+        let (_, _, _, toolConfig) = try translator.translate(request: request, resolvedModelID: "some-model", modelMapper: mapper)
         guard let tc = toolConfig else {
             Issue.record("Expected non-nil toolConfig")
             return
@@ -243,7 +244,7 @@ struct AnthropicRequestTranslatorTests {
             tools: nil,
             toolChoice: AnthropicToolChoice(type: "none", name: nil)
         )
-        let (_, _, _, toolConfig) = try translator.translate(request: request, resolvedModelID: "some-model")
+        let (_, _, _, toolConfig) = try translator.translate(request: request, resolvedModelID: "some-model", modelMapper: mapper)
         #expect(toolConfig == nil)
     }
 
@@ -255,7 +256,7 @@ struct AnthropicRequestTranslatorTests {
             temperature: 0.8,
             topP: 0.95
         )
-        let (_, _, inferenceConfig, _) = try translator.translate(request: request, resolvedModelID: "some-model")
+        let (_, _, inferenceConfig, _) = try translator.translate(request: request, resolvedModelID: "some-model", modelMapper: mapper)
         #expect(inferenceConfig.maxTokens == 512)
         #expect(abs((inferenceConfig.temperature ?? 0) - Float(0.8)) < Float(0.001))
         #expect(abs((inferenceConfig.topP ?? 0) - Float(0.95)) < Float(0.001))
@@ -284,7 +285,7 @@ struct AnthropicRequestTranslatorTests {
             messages: [AnthropicMessage(role: "user", content: .blocks([block]))]
         )
         let modelID = "us.anthropic.claude-sonnet-4-5-20250929-v1:0"
-        let (_, messages, _, _) = try translator.translate(request: request, resolvedModelID: modelID)
+        let (_, messages, _, _) = try translator.translate(request: request, resolvedModelID: modelID, modelMapper: mapper)
         #expect(messages.count == 1)
         guard let contentBlock = messages.first?.content.first else {
             Issue.record("Expected content block")
@@ -312,7 +313,7 @@ struct AnthropicRequestTranslatorTests {
             messages: [AnthropicMessage(role: "user", content: .blocks([block]))]
         )
         #expect(throws: ImageTranslationError.self) {
-            try translator.translate(request: request, resolvedModelID: "us.amazon.nova-micro-v1:0")
+            try translator.translate(request: request, resolvedModelID: "us.amazon.nova-micro-v1:0", modelMapper: mapper)
         }
     }
 
@@ -334,7 +335,7 @@ struct AnthropicRequestTranslatorTests {
         )
         let modelID = "us.anthropic.claude-sonnet-4-5-20250929-v1:0"
         #expect(throws: ImageTranslationError.self) {
-            try translator.translate(request: request, resolvedModelID: modelID)
+            try translator.translate(request: request, resolvedModelID: modelID, modelMapper: mapper)
         }
     }
 
@@ -357,7 +358,7 @@ struct AnthropicRequestTranslatorTests {
         )
         let modelID = "us.anthropic.claude-sonnet-4-5-20250929-v1:0"
         #expect(throws: ImageTranslationError.self) {
-            try translator.translate(request: request, resolvedModelID: modelID)
+            try translator.translate(request: request, resolvedModelID: modelID, modelMapper: mapper)
         }
     }
 }

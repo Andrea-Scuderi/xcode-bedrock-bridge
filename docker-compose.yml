@@ -15,6 +15,10 @@ services:
 
     # No ~/.aws volume mount — credentials are passed via env vars only.
 
+    # To restrict which models are shown, create models.json and uncomment:
+    # volumes:
+    #   - ./models.json:/app/models.json:ro
+
     healthcheck:
       # /health is a dedicated probe — no auth, no AWS calls, always fast.
       test: ["CMD", "curl", "-f", "http://localhost:8080/health"]

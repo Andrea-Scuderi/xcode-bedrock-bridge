@@ -3,15 +3,6 @@ import SotoCore
 import SotoBedrockRuntime
 import SotoBedrock
 
-// MARK: - FoundationModelInfo
-
-struct FoundationModelInfo: Sendable {
-    let modelId: String
-    let modelName: String?
-    let providerName: String?
-    let isActive: Bool
-}
-
 // MARK: - Protocol
 
 protocol FoundationModelListable: Sendable {
@@ -162,7 +153,11 @@ actor BedrockService {
                 modelId: summary.modelId,
                 modelName: summary.modelName,
                 providerName: summary.providerName,
-                isActive: summary.modelLifecycle?.status == .active
+                isActive: summary.modelLifecycle?.status == .active,
+                inputModalities: summary.inputModalities?.map(\.rawValue) ?? [],
+                outputModalities: summary.outputModalities?.map(\.rawValue) ?? [],
+                responseStreamingSupported: summary.responseStreamingSupported,
+                inferenceTypesSupported: summary.inferenceTypesSupported?.map(\.rawValue) ?? []
             )
         }
     }
