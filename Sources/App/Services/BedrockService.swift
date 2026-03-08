@@ -204,17 +204,15 @@ extension BedrockService: BedrockConversable {}
 
 extension BedrockService {
     static func httpStatus(for error: Error) -> HTTPResponseStatus {
-        let typeName = String(describing: type(of: error)).lowercased()
-        if typeName.contains("throttling") {
-            return .tooManyRequests
-        } else if typeName.contains("validation") {
-            return .badRequest
-        } else if typeName.contains("accessdenied") {
-            return .forbidden
-        } else if typeName.contains("resourcenotfound") || typeName.contains("modelnotfound") {
-            return .notFound
-        } else if typeName.contains("serviceunavailable") {
-            return .serviceUnavailable
+        if let awsError = error as? AWSErrorType {
+            let code = awsError.errorCode.lowercased()
+            if code.contains("throttling") { return .tooManyRequests }
+            if code.contains("validation") { return .badRequest }
+            if code.contains("accessdenied") { return .forbidden }
+            if code.contains("resourcenotfound") || code.contains("modelnotfound") { return .notFound }
+            if code.contains("serviceunavailable") { return .serviceUnavailable }
+            // Fall back to the HTTP status from the AWS response context when available.
+            if let responseCode = awsError.context?.responseCode { return responseCode }
         }
         return .internalServerError
     }
