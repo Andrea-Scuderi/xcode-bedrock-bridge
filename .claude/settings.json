@@ -2,7 +2,9 @@
   "permissions": {
     "deny": [
       "Read(./.env)",
-      "Read(./config.json)"
+      "Read(./config.json)",
+      "Grep(./env)",
+      "Grep(./config.json)"
     ]
   }
 }

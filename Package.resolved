@@ -1,5 +1,5 @@
 {
-  "originHash" : "6673ccc4b1f429ea74252f336f5c7eae73a1faa8cb5c77aab82b1aed2f29d6a4",
+  "originHash" : "dba38cd92af58bfec1fb4ff615d3f7ba024f3830f7c9f8b4b858d8a7be0809ed",
   "pins" : [
     {
       "identity" : "async-http-client",
@@ -58,10 +58,10 @@
     {
       "identity" : "soto",
       "kind" : "remoteSourceControl",
-      "location" : "https://github.com/andrea-scuderi/soto.git",
+      "location" : "https://github.com/soto-project/soto.git",
       "state" : {
-        "branch" : "fix-tool_use",
-        "revision" : "abf763b117283dec34fe9daf47948334d15e255d"
+        "revision" : "95513f2a8df8bdfff1e5cde951dfdf9c5a6b691e",
+        "version" : "7.13.0"
       }
     },
     {
@@ -69,8 +69,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/soto-project/soto-core.git",
       "state" : {
-        "revision" : "f207d2f9ae5439e197d79e0ddfd5b07064798218",
-        "version" : "7.12.0"
+        "revision" : "ae265c8819c0067a2b361408ad92fca0fd60d667",
+        "version" : "7.13.0"
       }
     },
     {
