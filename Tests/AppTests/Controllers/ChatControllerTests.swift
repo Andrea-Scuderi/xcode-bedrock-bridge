@@ -36,7 +36,8 @@ private struct MockBedrockConversable: BedrockConversable {
         modelID: String,
         system: [BedrockRuntime.SystemContentBlock],
         messages: [BedrockRuntime.Message],
-        inferenceConfig: BedrockRuntime.InferenceConfiguration
+        inferenceConfig: BedrockRuntime.InferenceConfiguration,
+        onUsage: (@Sendable (_ inputTokens: Int, _ outputTokens: Int) -> Void)?
     ) async throws -> AsyncThrowingStream<String, Error> {
         switch behavior {
         case .success:

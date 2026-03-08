@@ -95,6 +95,7 @@ struct ChatController: RouteCollection {
                 model: chatRequest.model,
                 completionID: completionID
             )
+            req.logger.info("tokens input=\(openAIResponse.usage.promptTokens) output=\(openAIResponse.usage.completionTokens) total=\(openAIResponse.usage.totalTokens)")
             return try await openAIResponse.encodeResponse(for: req)
         } catch {
             req.logger.error("Bedrock error: \(error)")
@@ -118,15 +119,19 @@ struct ChatController: RouteCollection {
         // access / auth errors are returned as proper HTTP error codes rather
         // than being buried inside a 200 OK SSE body.
         let textStream: AsyncThrowingStream<String, Error>
+        let logger = req.logger
         do {
             textStream = try await bedrockService.converseStream(
                 modelID: modelID,
                 system: system,
                 messages: messages,
-                inferenceConfig: inferenceConfig
+                inferenceConfig: inferenceConfig,
+                onUsage: { input, output in
+                    logger.info("tokens input=\(input) output=\(output)")
+                }
             )
         } catch {
-            req.logger.error("Bedrock error: \(error)")
+            logger.error("Bedrock error: \(error)")
             let status = BedrockService.httpStatus(for: error)
             throw Abort(status, reason: BedrockService.clientSafeReason(for: error))
         }
@@ -134,7 +139,6 @@ struct ChatController: RouteCollection {
         let model = chatRequest.model
         let encoder = JSONEncoder()
         let translator = responseTranslator
-        let logger = req.logger
 
         let response = Response(status: .ok)
         response.headers.replaceOrAdd(name: .contentType, value: "text/event-stream")

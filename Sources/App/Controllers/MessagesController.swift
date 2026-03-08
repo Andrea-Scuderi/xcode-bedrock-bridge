@@ -125,6 +125,7 @@ struct MessagesController: RouteCollection {
             let anthropicResponse = responseTranslator.translate(
                 response: bedrockResponse, model: request.model, messageID: messageID
             )
+            req.logger.info("tokens input=\(anthropicResponse.usage.inputTokens) output=\(anthropicResponse.usage.outputTokens)")
             return try await anthropicResponse.encodeResponse(for: req)
         } catch {
             req.logger.error("Bedrock error: \(error)")
@@ -178,6 +179,7 @@ struct MessagesController: RouteCollection {
                 try await writer.writeBuffer(ByteBuffer(string: pingSSE))
 
                 var stopReason = "end_turn"
+                var inputTokens = 0
                 var outputTokens = 0
 
                 for try await event in rawStream {
@@ -185,6 +187,7 @@ struct MessagesController: RouteCollection {
                     case .messageStop(let e):
                         stopReason = translator.translateStopReason(e.stopReason)
                     case .metadata(let e):
+                        inputTokens = e.usage.inputTokens
                         outputTokens = e.usage.outputTokens
                     default:
                         for sseStr in translator.translateStreamEvent(event) where !sseStr.isEmpty {
@@ -196,6 +199,7 @@ struct MessagesController: RouteCollection {
 
                 let finalSSE = translator.finalSSE(stopReason: stopReason, outputTokens: outputTokens)
                 logger.debug("Streaming finalSSE stopReason=\(stopReason) outputTokens=\(outputTokens)")
+                logger.info("tokens input=\(inputTokens) output=\(outputTokens)")
                 try await writer.writeBuffer(ByteBuffer(string: finalSSE))
             } catch {
                 // EPIPE / "Broken pipe" means the client disconnected mid-stream — not a server error.

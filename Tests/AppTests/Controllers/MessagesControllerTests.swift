@@ -1,6 +1,7 @@
 import Testing
 import VaporTesting
 import SotoBedrockRuntime
+import SotoCore
 @testable import App
 
 // MARK: - Mock
@@ -50,7 +51,8 @@ private struct MockBedrockConversable: BedrockConversable {
         modelID: String,
         system: [BedrockRuntime.SystemContentBlock],
         messages: [BedrockRuntime.Message],
-        inferenceConfig: BedrockRuntime.InferenceConfiguration
+        inferenceConfig: BedrockRuntime.InferenceConfiguration,
+        onUsage: (@Sendable (_ inputTokens: Int, _ outputTokens: Int) -> Void)?
     ) async throws -> AsyncThrowingStream<String, Error> {
         throw MockBedrockError.wrongMethodCalled
     }
@@ -60,8 +62,7 @@ private enum MockBedrockError: Error {
     case wrongMethodCalled
 }
 
-// Type name contains "Throttling" — matched by BedrockService.httpStatus(for:)
-private struct MockThrottlingError: Error {}
+private let mockThrottlingError: Error = AWSResponseError(errorCode: "ThrottlingException")
 
 // MARK: - Helpers
 
@@ -312,7 +313,7 @@ struct MessagesControllerNonStreamingTests {
     @Test("throttling error returns 429")
     func throttlingErrorReturns429() async throws {
         try await withApp({ app in
-            try configureMessagesApp(app: app, behavior: .failure(MockThrottlingError()))
+            try configureMessagesApp(app: app, behavior: .failure(mockThrottlingError))
         }) { app in
             var headers = HTTPHeaders()
             headers.contentType = .json
@@ -452,7 +453,7 @@ struct MessagesControllerStreamingTests {
     @Test("throttling error during setup returns 429")
     func throttlingErrorDuringSetupReturns429() async throws {
         try await withApp({ app in
-            try configureMessagesApp(app: app, behavior: .failure(MockThrottlingError()))
+            try configureMessagesApp(app: app, behavior: .failure(mockThrottlingError))
         }) { app in
             var headers = HTTPHeaders()
             headers.contentType = .json

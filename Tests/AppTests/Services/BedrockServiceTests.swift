@@ -1,59 +1,58 @@
 import Testing
+import SotoCore
 import Vapor
 @testable import App
 
-// Local error types whose type names contain the substrings that
-// BedrockService.httpStatus(for:) inspects via String(describing: type(of: error)).
-private struct ThrottlingError: Error {}
-private struct ValidationError: Error {}
-private struct AccessDeniedError: Error {}
-private struct ResourceNotFoundError: Error {}
-private struct ModelNotFoundError: Error {}
-private struct ServiceUnavailableError: Error {}
-private struct UnknownBedrockError: Error {}
+// MARK: - Helpers
+
+private func awsError(_ code: String) -> Error {
+    AWSResponseError(errorCode: code)
+}
 
 @Suite("BedrockService Error Mapping")
 struct BedrockServiceErrorMappingTests {
 
     @Test("Throttling error maps to 429 Too Many Requests")
     func throttlingErrorMapsToTooManyRequests() {
-        #expect(BedrockService.httpStatus(for: ThrottlingError()) == .tooManyRequests)
+        #expect(BedrockService.httpStatus(for: awsError("ThrottlingException")) == .tooManyRequests)
     }
 
     @Test("Validation error maps to 400 Bad Request")
     func validationErrorMapsToBadRequest() {
-        #expect(BedrockService.httpStatus(for: ValidationError()) == .badRequest)
+        #expect(BedrockService.httpStatus(for: awsError("ValidationException")) == .badRequest)
     }
 
     @Test("AccessDenied error maps to 403 Forbidden")
     func accessDeniedErrorMapsToForbidden() {
-        #expect(BedrockService.httpStatus(for: AccessDeniedError()) == .forbidden)
+        #expect(BedrockService.httpStatus(for: awsError("AccessDeniedException")) == .forbidden)
     }
 
     @Test("ResourceNotFound error maps to 404 Not Found")
     func resourceNotFoundErrorMapsToNotFound() {
-        #expect(BedrockService.httpStatus(for: ResourceNotFoundError()) == .notFound)
+        #expect(BedrockService.httpStatus(for: awsError("ResourceNotFoundException")) == .notFound)
     }
 
     @Test("ModelNotFound error maps to 404 Not Found")
     func modelNotFoundErrorMapsToNotFound() {
-        #expect(BedrockService.httpStatus(for: ModelNotFoundError()) == .notFound)
+        #expect(BedrockService.httpStatus(for: awsError("ModelNotFoundException")) == .notFound)
     }
 
     @Test("ServiceUnavailable error maps to 503 Service Unavailable")
     func serviceUnavailableErrorMapsToServiceUnavailable() {
-        #expect(BedrockService.httpStatus(for: ServiceUnavailableError()) == .serviceUnavailable)
+        #expect(BedrockService.httpStatus(for: awsError("ServiceUnavailableException")) == .serviceUnavailable)
     }
 
     @Test("unknown error maps to 500 Internal Server Error")
     func unknownErrorMapsToInternalServerError() {
-        #expect(BedrockService.httpStatus(for: UnknownBedrockError()) == .internalServerError)
+        struct UnknownError: Error {}
+        #expect(BedrockService.httpStatus(for: UnknownError()) == .internalServerError)
     }
 
     @Test("clientSafeReason returns HTTP status phrase, not internal error detail")
     func clientSafeReasonReturnsStatusPhrase() {
-        #expect(BedrockService.clientSafeReason(for: ThrottlingError()) == "Too Many Requests")
-        #expect(BedrockService.clientSafeReason(for: AccessDeniedError()) == "Forbidden")
-        #expect(BedrockService.clientSafeReason(for: UnknownBedrockError()) == "Internal Server Error")
+        #expect(BedrockService.clientSafeReason(for: awsError("ThrottlingException")) == "Too Many Requests")
+        #expect(BedrockService.clientSafeReason(for: awsError("AccessDeniedException")) == "Forbidden")
+        struct UnknownError: Error {}
+        #expect(BedrockService.clientSafeReason(for: UnknownError()) == "Internal Server Error")
     }
 }
