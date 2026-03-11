@@ -51,7 +51,7 @@ struct ModelsController: RouteCollection {
     static func ownedBy(for modelId: String) -> String {
         let parts = modelId.split(separator: ".", maxSplits: 2)
         let first = parts.first.map(String.init) ?? ""
-        let regionPrefixes: Set<String> = ["us", "eu", "ap"]
+        let regionPrefixes: Set<String> = ["us", "eu", "ap", "global"]
         if regionPrefixes.contains(first), parts.count >= 2 {
             return String(parts[1])
         }

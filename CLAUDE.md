@@ -54,18 +54,18 @@ POST /v1/messages          ──►  MessagesController
                                      ├── BedrockService (actor)
                                      └── AnthropicResponseTranslator (Bedrock → Anthropic SSE)
 
-GET /v1/models             ──►  ModelsController (live via listFoundationModels; fallback from modelNameToBedrockID)
+GET /v1/models             ──►  ModelsController (models.json → live listFoundationModels → empty fallback)
 ```
 
 **Key design decisions:**
 - `BedrockService` is a Swift actor for thread-safe AWS client operations. It exposes four methods: `converse()` (non-streaming), `converseStream()` (for OpenAI SSE), `converseStreamRaw()` (for Anthropic SSE, preserving raw Bedrock events), and `listFoundationModels()` (management API, returns `[FoundationModelInfo]`).
 - `BedrockService` holds both a `BedrockRuntime` client (inference, `SotoBedrockRuntime`) and a `Bedrock` client (management, `SotoBedrock`), sharing the same underlying `AWSClient`.
-- `ModelsController` fetches the live model list from `listFoundationModels` when real AWS credentials are present, using `modelName` as the `id` field and `providerName` as `owned_by` (falling back to prefix derivation when absent). It falls back to `fallbackModelList()` — derived from `ModelMapper.modelNameToBedrockID` — when using a Bedrock API key, when no `BedrockService` is initialised (tests), or when the API call fails. The `FoundationModelListable` protocol enables mock injection in tests.
-- `ModelMapper` resolves model strings in three tiers: (1) native Bedrock ID passthrough via provider prefix, (2) short alias via `mapping`, (3) human-readable name via `modelNameToBedrockID`. This supports the round-trip: `GET /v1/models` returns a name → Xcode sends the name back → `ModelMapper` resolves it to the correct Bedrock inference profile ID.
+- `ModelsController` serves the model list from `models.json` (project root) when that file is present. When absent and real AWS credentials are configured it calls `listFoundationModels`, using `modelName` as the `id` field and `providerName` as `owned_by`. It returns an empty list when using a Bedrock API key without a `models.json` file, when no `BedrockService` is initialised (tests), or when the API call fails. The `FoundationModelListable` protocol enables mock injection in tests.
+- `ModelMapper` resolves model strings in three tiers: (1) native Bedrock ID passthrough (any string starting with a known provider prefix such as `us.`, `eu.`, `ap.`, `global.`, `anthropic.`, `amazon.`, etc.), (2) name lookup against `configuredModels` loaded from `models.json` (with optional `crossRegionPrefix` prepended for models whose `inferenceTypesSupported` includes `INFERENCE_PROFILE`), (3) fallback to `defaultModel`. Short hardcoded aliases (e.g. `gpt-4`, `nova-pro`) were removed in favour of the `models.json` mechanism. This supports the round-trip: `GET /v1/models` returns a name → Xcode sends the name back → `ModelMapper` resolves it to the correct Bedrock inference profile ID.
 - `BedrockConversable` protocol (in `BedrockService.swift`) exposes `converse()` and `converseStreamRaw()` — the two inference methods used by `MessagesController`. `MessagesController` stores `any BedrockConversable`, enabling mock injection in tests. `BedrockService` conforms to both `FoundationModelListable` and `BedrockConversable`.
 - The Anthropic `/v1/messages` routes bypass `APIKeyMiddleware` because Xcode Coding Agent manages its own authentication.
 - Bedrock requires strict user/assistant turn alternation — `RequestTranslator` handles merging/reordering as needed.
-- Model aliases (e.g., `gpt-4`, `claude-sonnet-4-5`, `nova-pro`) are resolved to full Bedrock cross-region inference profile IDs in `ModelMapper`.
+- Model names returned by `GET /v1/models` are resolved to full Bedrock cross-region inference profile IDs in `ModelMapper` using the `models.json` data or live `listFoundationModels` results.
 
 ## Source Layout
 
@@ -78,6 +78,7 @@ GET /v1/models             ──►  ModelsController (live via listFoundationM
 | `Sources/App/Services/Configuration.swift` | `AppConfiguration` (env vars) and `ModelMapper` (alias resolution) |
 | `Sources/App/Translation/` | Protocol converters between OpenAI, Anthropic, and Bedrock formats |
 | `Sources/App/Models/` | Codable structs for OpenAI and Anthropic wire formats |
+| `Sources/App/Models/FoundationModelInfo.swift` | Codable struct mirroring AWS `list-foundation-models` shape; used by `AppConfiguration` and `ModelMapper` |
 | `Sources/App/Middleware/APIKeyMiddleware.swift` | Optional `x-api-key` / `Authorization: Bearer` validation |
 
 ## Configuration
@@ -95,6 +96,7 @@ Configuration is loaded in priority order: process env vars > `.env` (dotenv) > 
 | `PORT` | `8080` | HTTP listen port |
 | `LOG_LEVEL` | `info` | Vapor log level (`debug` logs full request/response payloads) |
 | `BIND_HOST` | `127.0.0.1` | Bind address; set to `0.0.0.0` in Docker to accept container traffic |
+| `CROSS_REGION_PREFIX` | `global` | Prefix for cross-region inference profiles when `models.json` is used |
 
 ## Key Dependencies
 
