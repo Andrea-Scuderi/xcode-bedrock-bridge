@@ -262,6 +262,33 @@ struct AnthropicRequestTranslatorTests {
         #expect(abs((inferenceConfig.topP ?? 0) - Float(0.95)) < Float(0.001))
     }
 
+    @Test("stopSequences forwarded to inferenceConfig")
+    func stopSequencesForwardedToInferenceConfig() throws {
+        let request = AnthropicRequest(
+            model: "claude-sonnet",
+            messages: [AnthropicMessage(role: "user", content: .text("Hi"))],
+            maxTokens: 1024,
+            system: nil,
+            tools: nil,
+            toolChoice: nil,
+            stream: nil,
+            temperature: nil,
+            topP: nil,
+            stopSequences: ["</answer>", "\n\nHuman:"]
+        )
+        let (_, _, inferenceConfig, _) = try translator.translate(request: request, resolvedModelID: "some-model", modelMapper: mapper)
+        #expect(inferenceConfig.stopSequences == ["</answer>", "\n\nHuman:"])
+    }
+
+    @Test("nil stopSequences produces nil in inferenceConfig")
+    func nilStopSequencesProducesNilInInferenceConfig() throws {
+        let request = makeRequest(
+            messages: [AnthropicMessage(role: "user", content: .text("Hi"))]
+        )
+        let (_, _, inferenceConfig, _) = try translator.translate(request: request, resolvedModelID: "some-model", modelMapper: mapper)
+        #expect(inferenceConfig.stopSequences == nil)
+    }
+
     // MARK: - Image Support
 
     @Test("image block with valid source translates to .image content block")

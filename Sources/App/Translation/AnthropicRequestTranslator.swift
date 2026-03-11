@@ -22,6 +22,7 @@ struct AnthropicRequestTranslator: Sendable {
         let messages = try request.messages.compactMap { try translateMessage($0) }
         let inferenceConfig = BedrockRuntime.InferenceConfiguration(
             maxTokens: request.maxTokens,
+            stopSequences: request.stopSequences,
             temperature: request.temperature.map { Float($0) },
             topP: request.topP.map { Float($0) }
         )

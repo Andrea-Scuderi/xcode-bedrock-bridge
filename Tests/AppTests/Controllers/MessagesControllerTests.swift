@@ -310,6 +310,20 @@ struct MessagesControllerNonStreamingTests {
         }
     }
 
+    @Test("response includes anthropic-version header")
+    func responseIncludesAnthropicVersionHeader() async throws {
+        try await withApp({ app in
+            try configureMessagesApp(app: app, behavior: .success(mockConverseResponse()))
+        }) { app in
+            var headers = HTTPHeaders()
+            headers.contentType = .json
+
+            try await app.test(.POST, "/v1/messages", headers: headers, body: ByteBuffer(string: validBody)) { res async in
+                #expect(res.headers.first(name: "anthropic-version") == "2023-06-01")
+            }
+        }
+    }
+
     @Test("throttling error returns 429")
     func throttlingErrorReturns429() async throws {
         try await withApp({ app in
@@ -446,6 +460,20 @@ struct MessagesControllerStreamingTests {
             try await app.test(.POST, "/v1/messages", headers: headers, body: ByteBuffer(string: streamingBody)) { res async in
                 let bodyStr = res.body.string
                 #expect(bodyStr.contains("event: message_stop"))
+            }
+        }
+    }
+
+    @Test("streaming response includes anthropic-version header")
+    func streamingResponseIncludesAnthropicVersionHeader() async throws {
+        try await withApp({ app in
+            try configureMessagesApp(app: app, behavior: .streamSuccess(minimalStreamEvents()))
+        }) { app in
+            var headers = HTTPHeaders()
+            headers.contentType = .json
+
+            try await app.test(.POST, "/v1/messages", headers: headers, body: ByteBuffer(string: streamingBody)) { res async in
+                #expect(res.headers.first(name: "anthropic-version") == "2023-06-01")
             }
         }
     }
