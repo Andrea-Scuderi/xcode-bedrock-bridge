@@ -69,7 +69,7 @@ struct ModelsControllerOwnedByTests {
     }
 }
 
-// MARK: - Static fallback suite (no BedrockService injected)
+// MARK: - Static fallback suite (no BedrockService injected, no configuredModels)
 
 @Suite("ModelsController")
 struct ModelsControllerTests {
@@ -85,74 +85,15 @@ struct ModelsControllerTests {
         }
     }
 
-    @Test("response body is list object with data")
-    func responseBodyIsListObject() async throws {
+    @Test("returns empty list when no models.json and no service")
+    func returnsEmptyListWhenNoConfigAndNoService() async throws {
         try await withApp({ app in
             try app.register(collection: ModelsController())
         }) { app in
             try await app.test(.GET, "/v1/models") { res async in
                 let body = try? res.content.decode(ModelListResponse.self)
                 #expect(body?.object == "list")
-                #expect((body?.data.count ?? 0) > 0)
-            }
-        }
-    }
-
-    @Test("response contains expected Anthropic model names")
-    func responseContainsExpectedAnthropicModelNames() async throws {
-        try await withApp({ app in
-            try app.register(collection: ModelsController())
-        }) { app in
-            try await app.test(.GET, "/v1/models") { res async in
-                if let body = try? res.content.decode(ModelListResponse.self) {
-                    let ids = body.data.map(\.id)
-                    #expect(ids.contains("Claude 3.5 Sonnet v2"))
-                    #expect(ids.contains("Claude 3 Haiku"))
-                }
-            }
-        }
-    }
-
-    @Test("response contains expected Amazon Nova model names")
-    func responseContainsExpectedAmazonModelNames() async throws {
-        try await withApp({ app in
-            try app.register(collection: ModelsController())
-        }) { app in
-            try await app.test(.GET, "/v1/models") { res async in
-                if let body = try? res.content.decode(ModelListResponse.self) {
-                    let ids = body.data.map(\.id)
-                    #expect(ids.contains("Nova Pro"))
-                    #expect(ids.contains("Nova Lite"))
-                    #expect(ids.contains("Nova Micro"))
-                }
-            }
-        }
-    }
-
-    @Test("Anthropic models have owned_by anthropic")
-    func anthropicModelsHaveOwnedByAnthropic() async throws {
-        try await withApp({ app in
-            try app.register(collection: ModelsController())
-        }) { app in
-            try await app.test(.GET, "/v1/models") { res async in
-                if let body = try? res.content.decode(ModelListResponse.self) {
-                    let anthropicModels = body.data.filter { $0.ownedBy == "anthropic" }
-                    #expect(!anthropicModels.isEmpty)
-                }
-            }
-        }
-    }
-
-    @Test("Amazon models have owned_by amazon")
-    func amazonModelsHaveOwnedByAmazon() async throws {
-        try await withApp({ app in
-            try app.register(collection: ModelsController())
-        }) { app in
-            try await app.test(.GET, "/v1/models") { res async in
-                if let body = try? res.content.decode(ModelListResponse.self) {
-                    let amazonModels = body.data.filter { $0.ownedBy == "amazon" }
-                    #expect(!amazonModels.isEmpty)
-                }
+                #expect(body?.data.isEmpty == true)
             }
         }
     }
@@ -166,6 +107,100 @@ struct ModelsControllerTests {
                 if let body = try? res.content.decode(ModelListResponse.self) {
                     #expect(body.data.allSatisfy { $0.object == "model" })
                 }
+            }
+        }
+    }
+}
+
+// MARK: - Configured models suite (models.json present)
+
+@Suite("ModelsController configured models")
+struct ModelsControllerConfiguredModelsTests {
+
+    @Test("configured models are returned when present")
+    func configuredModelsAreReturnedWhenPresent() async throws {
+        let configured: [FoundationModelInfo] = [
+            makeInfo(modelId: "us.anthropic.claude-sonnet-4-5-20250929-v1:0", modelName: "Claude Sonnet 4.5", providerName: "Anthropic"),
+            makeInfo(modelId: "us.amazon.nova-pro-v1:0", modelName: "Nova Pro", providerName: "Amazon"),
+        ]
+        try await withApp({ app in
+            app.appConfiguration = AppConfiguration(
+                awsRegion: "us-east-1",
+                awsProfile: nil,
+                bedrockAPIKey: nil,
+                defaultBedrockModel: "us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+                proxyAPIKey: nil,
+                port: 8080,
+                bindHost: "127.0.0.1",
+                configuredModels: configured
+            )
+            try app.register(collection: ModelsController())
+        }) { app in
+            try await app.test(.GET, "/v1/models") { res async in
+                let body = try? res.content.decode(ModelListResponse.self)
+                let ids = body?.data.map(\.id) ?? []
+                #expect(ids.contains("Claude Sonnet 4.5"))
+                #expect(ids.contains("Nova Pro"))
+                #expect(ids.count == 2)
+            }
+        }
+    }
+
+    @Test("configured models skip live AWS list")
+    func configuredModelsSkipLiveList() async throws {
+        let mock = MockFoundationModelListable(behavior: .success([
+            makeInfo(modelId: "anthropic.claude-3-haiku-20240307-v1:0", modelName: "Claude 3 Haiku"),
+        ]))
+        let configured: [FoundationModelInfo] = [
+            makeInfo(modelId: "us.anthropic.claude-sonnet-4-5-20250929-v1:0", modelName: "My Model"),
+        ]
+        try await withApp({ app in
+            app.appConfiguration = AppConfiguration(
+                awsRegion: "us-east-1",
+                awsProfile: nil,
+                bedrockAPIKey: nil,
+                defaultBedrockModel: "us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+                proxyAPIKey: nil,
+                port: 8080,
+                bindHost: "127.0.0.1",
+                configuredModels: configured
+            )
+            // Even if a listable is injected, configured models take priority
+            try app.register(collection: ModelsController(foundationModelListable: mock))
+        }) { app in
+            try await app.test(.GET, "/v1/models") { res async in
+                let body = try? res.content.decode(ModelListResponse.self)
+                let ids = body?.data.map(\.id) ?? []
+                #expect(ids.contains("My Model"))
+                #expect(!ids.contains("Claude 3 Haiku"))
+            }
+        }
+    }
+
+    @Test("configured models sorted alphabetically")
+    func configuredModelsSortedAlphabetically() async throws {
+        let configured: [FoundationModelInfo] = [
+            makeInfo(modelId: "us.amazon.nova-pro-v1:0", modelName: "Zeta Model"),
+            makeInfo(modelId: "us.anthropic.claude-sonnet-4-5-20250929-v1:0", modelName: "Alpha Model"),
+            makeInfo(modelId: "us.anthropic.claude-haiku-4-5-20251001-v1:0", modelName: "Mu Model"),
+        ]
+        try await withApp({ app in
+            app.appConfiguration = AppConfiguration(
+                awsRegion: "us-east-1",
+                awsProfile: nil,
+                bedrockAPIKey: nil,
+                defaultBedrockModel: "us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+                proxyAPIKey: nil,
+                port: 8080,
+                bindHost: "127.0.0.1",
+                configuredModels: configured
+            )
+            try app.register(collection: ModelsController())
+        }) { app in
+            try await app.test(.GET, "/v1/models") { res async in
+                let body = try? res.content.decode(ModelListResponse.self)
+                let ids = body?.data.map(\.id) ?? []
+                #expect(ids == ids.sorted())
             }
         }
     }
@@ -280,32 +315,28 @@ struct ModelsControllerDynamicListTests {
         }
     }
 
-    @Test("falls back to fallback list when service throws")
-    func fallsBackToFallbackListWhenServiceThrows() async throws {
+    @Test("falls back to empty list when service throws")
+    func fallsBackToEmptyListWhenServiceThrows() async throws {
         let mock = MockFoundationModelListable(behavior: .failure(MockListError()))
         try await withApp({ app in
             try app.register(collection: ModelsController(foundationModelListable: mock))
         }) { app in
             try await app.test(.GET, "/v1/models") { res async in
                 let body = try? res.content.decode(ModelListResponse.self)
-                let ids = body?.data.map(\.id) ?? []
-                #expect(ids.contains("Claude 3.5 Sonnet v2"))
-                #expect(ids.contains("Nova Pro"))
+                #expect(body?.data.isEmpty == true)
             }
         }
     }
 
-    @Test("falls back to fallback list when service returns empty array")
-    func fallsBackToFallbackListWhenServiceReturnsEmpty() async throws {
+    @Test("falls back to empty list when service returns empty array")
+    func fallsBackToEmptyListWhenServiceReturnsEmpty() async throws {
         let mock = MockFoundationModelListable(behavior: .empty)
         try await withApp({ app in
             try app.register(collection: ModelsController(foundationModelListable: mock))
         }) { app in
             try await app.test(.GET, "/v1/models") { res async in
                 let body = try? res.content.decode(ModelListResponse.self)
-                let ids = body?.data.map(\.id) ?? []
-                #expect(ids.contains("Claude 3.5 Sonnet v2"))
-                #expect(ids.contains("Nova Pro"))
+                #expect(body?.data.isEmpty == true)
             }
         }
     }

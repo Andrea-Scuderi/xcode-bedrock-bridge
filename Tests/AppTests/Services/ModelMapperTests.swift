@@ -6,45 +6,12 @@ struct ModelMapperTests {
 
     let mapper = ModelMapper(defaultModel: "us.anthropic.claude-sonnet-4-5-20250929-v1:0")
 
-    @Test("gpt-4 maps to Sonnet 4.5")
-    func gpt4MapsToSonnet() {
-        #expect(mapper.bedrockModelID(for: "gpt-4") == "us.anthropic.claude-sonnet-4-5-20250929-v1:0")
-    }
-
-    @Test("gpt-3.5-turbo maps to Haiku 4.5")
-    func gpt35TurboMapsToHaiku() {
-        #expect(mapper.bedrockModelID(for: "gpt-3.5-turbo") == "us.anthropic.claude-haiku-4-5-20251001-v1:0")
-    }
+    // MARK: - Tier 1: native Bedrock ID passthrough
 
     @Test("native us.anthropic Bedrock model ID passes through")
     func passthroughNativeBedrockID() {
         let nativeID = "us.anthropic.claude-3-opus-20240229-v1:0"
         #expect(mapper.bedrockModelID(for: nativeID) == nativeID)
-    }
-
-    @Test("unknown model falls back to default")
-    func unknownModelFallsToDefault() {
-        #expect(mapper.bedrockModelID(for: "some-unknown-model") == "us.anthropic.claude-sonnet-4-5-20250929-v1:0")
-    }
-
-    @Test("claude-3-5-sonnet alias resolves to v2 model")
-    func claudeSonnetAlias() {
-        #expect(mapper.bedrockModelID(for: "claude-3-5-sonnet") == "us.anthropic.claude-3-5-sonnet-20241022-v2:0")
-    }
-
-    @Test("gpt-4o maps to Sonnet 4.5")
-    func gpt4oMapsToSonnet() {
-        #expect(mapper.bedrockModelID(for: "gpt-4o") == "us.anthropic.claude-sonnet-4-5-20250929-v1:0")
-    }
-
-    @Test("gpt-4-turbo maps to Sonnet 4.5")
-    func gpt4TurboMapsToSonnet() {
-        #expect(mapper.bedrockModelID(for: "gpt-4-turbo") == "us.anthropic.claude-sonnet-4-5-20250929-v1:0")
-    }
-
-    @Test("claude-opus-4-6 alias resolves")
-    func claudeOpus4Alias() {
-        #expect(mapper.bedrockModelID(for: "claude-opus-4-6") == "us.anthropic.claude-opus-4-6-v1")
     }
 
     @Test("amazon. prefix model passes through unchanged")
@@ -53,42 +20,10 @@ struct ModelMapperTests {
         #expect(mapper.bedrockModelID(for: nativeID) == nativeID)
     }
 
-    @Test("empty string falls back to default")
-    func emptyStringFallsToDefault() {
-        #expect(mapper.bedrockModelID(for: "") == "us.anthropic.claude-sonnet-4-5-20250929-v1:0")
-    }
-
-    @Test("embedded provider prefix does not trigger passthrough")
-    func embeddedProviderPrefixFallsToDefault() {
-        // "hack.me.anthropic.test" contains "anthropic." but must NOT pass through —
-        // only strings that *start with* a known prefix are native Bedrock IDs.
-        #expect(mapper.bedrockModelID(for: "hack.me.anthropic.test") == "us.anthropic.claude-sonnet-4-5-20250929-v1:0")
-    }
-
-    @Test("nova-pro alias resolves to Amazon Nova Pro")
-    func novaProAliasResolvesToAmazonNovaPro() {
-        #expect(mapper.bedrockModelID(for: "nova-pro") == "us.amazon.nova-pro-v1:0")
-    }
-
-    @Test("nova-lite alias resolves to Amazon Nova Lite")
-    func novaLiteAliasResolvesToAmazonNovaLite() {
-        #expect(mapper.bedrockModelID(for: "nova-lite") == "us.amazon.nova-lite-v1:0")
-    }
-
-    @Test("nova-micro alias resolves to Amazon Nova Micro")
-    func novaMicroAliasResolvesToAmazonNovaMicro() {
-        #expect(mapper.bedrockModelID(for: "nova-micro") == "us.amazon.nova-micro-v1:0")
-    }
-
     @Test("us.amazon. cross-region model ID passes through unchanged")
     func passthroughUsAmazonCrossRegionID() {
         let nativeID = "us.amazon.nova-pro-v1:0"
         #expect(mapper.bedrockModelID(for: nativeID) == nativeID)
-    }
-
-    @Test("deepseek-r1 alias resolves to us.deepseek.r1-v1:0")
-    func deepseekR1AliasResolves() {
-        #expect(mapper.bedrockModelID(for: "deepseek-r1") == "us.deepseek.r1-v1:0")
     }
 
     @Test("native us.deepseek model ID passes through unchanged")
@@ -109,123 +44,173 @@ struct ModelMapperTests {
         #expect(mapper.bedrockModelID(for: nativeID) == nativeID)
     }
 
-    @Test("llama-3-3-70b alias resolves correctly")
-    func llama33Alias() {
-        #expect(mapper.bedrockModelID(for: "llama-3-3-70b") == "us.meta.llama3-3-70b-instruct-v1:0")
-    }
-
-    @Test("mistral-large alias resolves to Bedrock Mistral Large")
-    func mistralLargeAlias() {
-        #expect(mapper.bedrockModelID(for: "mistral-large") == "mistral.mistral-large-2407-v1:0")
-    }
-
-    @Test("command-r-plus alias resolves to Cohere Command R+")
-    func commandRPlusAlias() {
-        #expect(mapper.bedrockModelID(for: "command-r-plus") == "cohere.command-r-plus-v1:0")
-    }
-
-    @Test("jamba-large alias resolves to AI21 Jamba 1.5 Large")
-    func jamba15LargeAlias() {
-        #expect(mapper.bedrockModelID(for: "jamba-large") == "ai21.jamba-1-5-large-v1:0")
-    }
-
-    @Test("llama-4-maverick alias resolves correctly")
-    func llama4MaverickAlias() {
-        #expect(mapper.bedrockModelID(for: "llama-4-maverick") == "us.meta.llama4-maverick-17b-instruct-v1:0")
-    }
-
     @Test("native cohere. model ID passes through unchanged")
     func passthroughNativeCohereID() {
         let nativeID = "cohere.command-r-plus-v1:0"
         #expect(mapper.bedrockModelID(for: nativeID) == nativeID)
     }
 
-    // MARK: - Model name resolution (tier 3)
-
-    @Test("model name 'Claude 3.5 Sonnet v2' resolves to Bedrock ID")
-    func claudeSonnetV2NameResolvesToBedrockID() {
-        #expect(mapper.bedrockModelID(for: "Claude 3.5 Sonnet v2") == "us.anthropic.claude-3-5-sonnet-20241022-v2:0")
+    @Test("embedded provider prefix does not trigger passthrough")
+    func embeddedProviderPrefixFallsToDefault() {
+        // "hack.me.anthropic.test" contains "anthropic." but must NOT pass through —
+        // only strings that *start with* a known prefix are native Bedrock IDs.
+        #expect(mapper.bedrockModelID(for: "hack.me.anthropic.test") == "us.anthropic.claude-sonnet-4-5-20250929-v1:0")
     }
 
-    @Test("model name 'Nova Pro' resolves to Bedrock ID")
-    func novaProNameResolvesToBedrockID() {
-        #expect(mapper.bedrockModelID(for: "Nova Pro") == "us.amazon.nova-pro-v1:0")
+    // MARK: - Tier 2: configuredModels (models.json)
+
+    @Test("configured model with INFERENCE_PROFILE gets configured prefix")
+    func configuredModelWithInferenceProfileGetsConfiguredPrefix() {
+        for prefix in ["global", "us", "eu", "ap"] {
+            let mapperWithConfig = ModelMapper(
+                defaultModel: "us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+                configuredModels: [
+                    FoundationModelInfo(modelId: "anthropic.claude-sonnet-4-5-20250929-v1:0", modelName: "Claude Sonnet 4.5", isActive: true, inferenceTypesSupported: ["INFERENCE_PROFILE"]),
+                    FoundationModelInfo(modelId: "amazon.nova-pro-v1:0", modelName: "Nova Pro", isActive: true, inferenceTypesSupported: ["ON_DEMAND", "INFERENCE_PROFILE"]),
+                ],
+                crossRegionPrefix: prefix
+            )
+            #expect(mapperWithConfig.bedrockModelID(for: "Claude Sonnet 4.5") == "\(prefix).anthropic.claude-sonnet-4-5-20250929-v1:0")
+            #expect(mapperWithConfig.bedrockModelID(for: "Nova Pro") == "\(prefix).amazon.nova-pro-v1:0")
+        }
     }
 
-    @Test("model name 'DeepSeek-R1' resolves to Bedrock ID")
-    func deepSeekR1NameResolvesToBedrockID() {
-        #expect(mapper.bedrockModelID(for: "DeepSeek-R1") == "us.deepseek.r1-v1:0")
+    @Test("configured model without INFERENCE_PROFILE is not prefixed")
+    func configuredModelWithoutInferenceProfileNotPrefixed() {
+        let mapperWithConfig = ModelMapper(
+            defaultModel: "us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+            configuredModels: [
+                FoundationModelInfo(modelId: "cohere.embed-english-v3", modelName: "Embed English", isActive: true, inferenceTypesSupported: ["ON_DEMAND"]),
+            ]
+        )
+        #expect(mapperWithConfig.bedrockModelID(for: "Embed English") == "cohere.embed-english-v3")
     }
 
-    @Test("model name 'Llama 3.3 70B Instruct' resolves to Bedrock ID")
-    func llama33NameResolvesToBedrockID() {
-        #expect(mapper.bedrockModelID(for: "Llama 3.3 70B Instruct") == "us.meta.llama3-3-70b-instruct-v1:0")
+    @Test("configuredModels modelId already cross-region passes through unchanged")
+    func configuredModelsAlreadyCrossRegionPassesThrough() {
+        let mapperWithConfig = ModelMapper(
+            defaultModel: "us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+            configuredModels: [
+                FoundationModelInfo(modelId: "us.anthropic.claude-sonnet-4-5-20250929-v1:0", modelName: "My Model", isActive: true, inferenceTypesSupported: ["INFERENCE_PROFILE"]),
+            ]
+        )
+        #expect(mapperWithConfig.bedrockModelID(for: "My Model") == "us.anthropic.claude-sonnet-4-5-20250929-v1:0")
     }
 
-    @Test("model name 'Mistral Large (24.02)' resolves to Bedrock ID")
-    func mistralLargeNameResolvesToBedrockID() {
-        #expect(mapper.bedrockModelID(for: "Mistral Large (24.02)") == "mistral.mistral-large-2402-v1:0")
+    @Test("global. prefixed model ID passes through via tier-1")
+    func globalPrefixPassesThroughTierOne() {
+        let nativeID = "global.anthropic.claude-sonnet-4-5-20250929-v1:0"
+        #expect(mapper.bedrockModelID(for: nativeID) == nativeID)
     }
 
-    @Test("model name 'Command R+' resolves to Bedrock ID")
-    func commandRPlusNameResolvesToBedrockID() {
-        #expect(mapper.bedrockModelID(for: "Command R+") == "cohere.command-r-plus-v1:0")
+    @Test("name not in configuredModels returns defaultModel")
+    func returnsDefaultWhenNameNotInConfiguredModels() {
+        let mapperWithConfig = ModelMapper(
+            defaultModel: "us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+            configuredModels: [
+                FoundationModelInfo(modelId: "amazon.nova-pro-v1:0", modelName: "Known Model", isActive: true, inferenceTypesSupported: ["ON_DEMAND"]),
+            ]
+        )
+        #expect(mapperWithConfig.bedrockModelID(for: "Unknown Model") == "us.anthropic.claude-sonnet-4-5-20250929-v1:0")
     }
 
-    @Test("model name 'Jamba 1.5 Large' resolves to Bedrock ID")
-    func jamba15LargeNameResolvesToBedrockID() {
-        #expect(mapper.bedrockModelID(for: "Jamba 1.5 Large") == "ai21.jamba-1-5-large-v1:0")
+    // MARK: - Default fallback
+
+    @Test("unknown model falls back to default")
+    func unknownModelFallsToDefault() {
+        #expect(mapper.bedrockModelID(for: "some-unknown-model") == "us.anthropic.claude-sonnet-4-5-20250929-v1:0")
+    }
+
+    @Test("empty string falls back to default")
+    func emptyStringFallsToDefault() {
+        #expect(mapper.bedrockModelID(for: "") == "us.anthropic.claude-sonnet-4-5-20250929-v1:0")
+    }
+
+    @Test("nil configuredModels falls back to default for any name")
+    func nilConfiguredModelsFallsToDefault() {
+        #expect(mapper.bedrockModelID(for: "Claude Sonnet 4.5") == "us.anthropic.claude-sonnet-4-5-20250929-v1:0")
     }
 
     // MARK: - supportsImageInput
 
     @Test("Claude 3 Haiku supports image input")
     func claude3HaikuSupportsImages() {
-        #expect(ModelMapper.supportsImageInput(bedrockID: "us.anthropic.claude-3-haiku-20240307-v1:0"))
+        #expect(mapper.supportsImageInput(bedrockID: "us.anthropic.claude-3-haiku-20240307-v1:0"))
     }
 
     @Test("Claude Sonnet 4.5 supports image input")
     func claudeSonnet45SupportsImages() {
-        #expect(ModelMapper.supportsImageInput(bedrockID: "us.anthropic.claude-sonnet-4-5-20250929-v1:0"))
+        #expect(mapper.supportsImageInput(bedrockID: "us.anthropic.claude-sonnet-4-5-20250929-v1:0"))
     }
 
     @Test("Nova Pro supports image input")
     func novaProSupportsImages() {
-        #expect(ModelMapper.supportsImageInput(bedrockID: "us.amazon.nova-pro-v1:0"))
+        #expect(mapper.supportsImageInput(bedrockID: "us.amazon.nova-pro-v1:0"))
     }
 
     @Test("Nova Lite supports image input")
     func novaLiteSupportsImages() {
-        #expect(ModelMapper.supportsImageInput(bedrockID: "us.amazon.nova-lite-v1:0"))
+        #expect(mapper.supportsImageInput(bedrockID: "us.amazon.nova-lite-v1:0"))
     }
 
     @Test("Nova Micro does NOT support image input")
     func novaMicroDoesNotSupportImages() {
-        #expect(!ModelMapper.supportsImageInput(bedrockID: "us.amazon.nova-micro-v1:0"))
+        #expect(!mapper.supportsImageInput(bedrockID: "us.amazon.nova-micro-v1:0"))
     }
 
     @Test("Llama 3.2 90B supports image input")
     func llama3290bSupportsImages() {
-        #expect(ModelMapper.supportsImageInput(bedrockID: "us.meta.llama3-2-90b-instruct-v1:0"))
+        #expect(mapper.supportsImageInput(bedrockID: "us.meta.llama3-2-90b-instruct-v1:0"))
     }
 
     @Test("Llama 3.1 405B does NOT support image input")
     func llama31405bDoesNotSupportImages() {
-        #expect(!ModelMapper.supportsImageInput(bedrockID: "us.meta.llama3-1-405b-instruct-v1:0"))
+        #expect(!mapper.supportsImageInput(bedrockID: "us.meta.llama3-1-405b-instruct-v1:0"))
     }
 
     @Test("Pixtral Large supports image input")
     func pixtralLargeSupportsImages() {
-        #expect(ModelMapper.supportsImageInput(bedrockID: "us.mistral.pixtral-large-2502-v1:0"))
+        #expect(mapper.supportsImageInput(bedrockID: "us.mistral.pixtral-large-2502-v1:0"))
     }
 
     @Test("Mistral Large does NOT support image input")
     func mistralLargeDoesNotSupportImages() {
-        #expect(!ModelMapper.supportsImageInput(bedrockID: "mistral.mistral-large-2407-v1:0"))
+        #expect(!mapper.supportsImageInput(bedrockID: "mistral.mistral-large-2407-v1:0"))
     }
 
     @Test("unknown model does NOT support image input")
     func unknownModelDoesNotSupportImages() {
-        #expect(!ModelMapper.supportsImageInput(bedrockID: "some-unknown-model"))
+        #expect(!mapper.supportsImageInput(bedrockID: "some-unknown-model"))
+    }
+
+    @Test("configuredModels with IMAGE modality reports image support")
+    func configuredModelWithImageModalitySupportsImages() {
+        let mapperWithConfig = ModelMapper(
+            defaultModel: "us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+            configuredModels: [
+                FoundationModelInfo(modelId: "amazon.nova-micro-v1:0", modelName: "Nova Micro", isActive: true,
+                                    inputModalities: ["TEXT"], inferenceTypesSupported: ["ON_DEMAND"]),
+                FoundationModelInfo(modelId: "amazon.nova-pro-v1:0", modelName: "Nova Pro", isActive: true,
+                                    inputModalities: ["TEXT", "IMAGE"], inferenceTypesSupported: ["ON_DEMAND", "INFERENCE_PROFILE"]),
+            ]
+        )
+        // Nova Pro has IMAGE in inputModalities — should return true even for prefixed ID
+        #expect(mapperWithConfig.supportsImageInput(bedrockID: "global.amazon.nova-pro-v1:0"))
+        // Nova Micro has only TEXT — should return false even though prefix list would normally say nothing
+        #expect(!mapperWithConfig.supportsImageInput(bedrockID: "amazon.nova-micro-v1:0"))
+    }
+
+    @Test("configuredModels overrides prefix-list heuristic")
+    func configuredModelsOverridesPrefixList() {
+        // Normally "us.amazon.nova-lite-v1:0" would match the hardcoded prefix list.
+        // When configuredModels is present and says TEXT-only, that takes priority.
+        let mapperWithConfig = ModelMapper(
+            defaultModel: "us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+            configuredModels: [
+                FoundationModelInfo(modelId: "amazon.nova-lite-v1:0", modelName: "Nova Lite", isActive: true,
+                                    inputModalities: ["TEXT"], inferenceTypesSupported: ["ON_DEMAND"]),
+            ]
+        )
+        #expect(!mapperWithConfig.supportsImageInput(bedrockID: "us.amazon.nova-lite-v1:0"))
     }
 }

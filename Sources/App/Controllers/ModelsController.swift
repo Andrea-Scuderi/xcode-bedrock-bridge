@@ -14,22 +14,33 @@ struct ModelsController: RouteCollection {
     @Sendable
     func listModels(req: Request) async throws -> ModelListResponse {
         let now = Int(Date().timeIntervalSince1970)
+        // Configured models take full priority — skip live AWS call
+        if let configured = req.application.appConfiguration.configuredModels {
+            return modelList(from: configured, created: now)
+        }
         let service = overrideListable ?? req.application.optionalBedrockService
         guard let service else { return fallbackModelList(created: now) }
         do {
             let foundationModels = try await service.listFoundationModels()
-            let models: [ModelObject] = foundationModels.compactMap { model in
-                guard model.isActive else { return nil }
-                let displayID = model.modelName ?? model.modelId
-                let ownedBy = (model.providerName ?? Self.ownedBy(for: model.modelId)).lowercased()
-                return ModelObject(id: displayID, object: "model", created: now, ownedBy: ownedBy)
-            }
-            guard !models.isEmpty else { return fallbackModelList(created: now) }
-            return ModelListResponse(object: "list", data: models)
+            let result = modelList(from: foundationModels, created: now)
+            guard !result.data.isEmpty else { return fallbackModelList(created: now) }
+            return result
         } catch {
             req.logger.warning("listFoundationModels failed, falling back: \(error)")
             return fallbackModelList(created: now)
         }
+    }
+
+    // MARK: - Model list builder
+
+    private func modelList(from summaries: [FoundationModelInfo], created: Int) -> ModelListResponse {
+        let models: [ModelObject] = summaries.compactMap { model in
+            guard model.isActive else { return nil }
+            let displayID = model.modelName ?? model.modelId
+            let ownedBy = (model.providerName ?? Self.ownedBy(for: model.modelId)).lowercased()
+            return ModelObject(id: displayID, object: "model", created: created, ownedBy: ownedBy)
+        }.sorted { $0.id < $1.id }
+        return ModelListResponse(object: "list", data: models)
     }
 
     // MARK: - ownedBy derivation
@@ -40,7 +51,7 @@ struct ModelsController: RouteCollection {
     static func ownedBy(for modelId: String) -> String {
         let parts = modelId.split(separator: ".", maxSplits: 2)
         let first = parts.first.map(String.init) ?? ""
-        let regionPrefixes: Set<String> = ["us", "eu", "ap"]
+        let regionPrefixes: Set<String> = ["us", "eu", "ap", "global"]
         if regionPrefixes.contains(first), parts.count >= 2 {
             return String(parts[1])
         }
@@ -50,9 +61,6 @@ struct ModelsController: RouteCollection {
     // MARK: - Fallback model list
 
     private func fallbackModelList(created: Int) -> ModelListResponse {
-        let models = ModelMapper.modelNameToBedrockID.map { (name, bedrockID) in
-            ModelObject(id: name, object: "model", created: created, ownedBy: Self.ownedBy(for: bedrockID))
-        }.sorted { $0.id < $1.id }
-        return ModelListResponse(object: "list", data: models)
+        ModelListResponse(object: "list", data: [])
     }
 }

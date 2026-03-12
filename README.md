@@ -236,33 +236,45 @@ defaults write com.apple.dt.Xcode IDEChatClaudeAgentAPIKeyOverride ' '
 
 ## Available models
 
-`GET /v1/models` returns human-readable **model names** as the `id` field — this is what Xcode displays in the model picker and sends back in subsequent requests. The proxy resolves each name to the correct Bedrock inference profile ID automatically.
+`GET /v1/models` returns human-readable **model names** as the `id` field. Xcode displays these
+in the model picker and sends the chosen name back in subsequent requests. The proxy resolves each
+name to the correct Bedrock inference profile ID automatically.
 
-**With real AWS credentials**, the list is fetched live from `Bedrock.listFoundationModels()` and reflects every active model in the configured region (49 models as of February 2026, spanning Anthropic Claude, Amazon Nova, Meta Llama, Mistral, Qwen, NVIDIA, DeepSeek, Google, and more).
+Model resolution priority (highest first):
 
-**Without real credentials** (Bedrock API key, API failure, or no service configured), the proxy falls back to a built-in list of well-known models. A selection from the fallback:
+| Source | When used |
+|--------|-----------|
+| `models.json` (project root) | Always, if the file is present |
+| Live `bedrock:ListFoundationModels` | When `models.json` is absent and real AWS credentials are configured |
+| Empty list | When using a Bedrock API key without a `models.json` file |
 
-| Xcode model name | Bedrock inference profile |
-|---|---|
-| Claude Sonnet 4.5 | `us.anthropic.claude-sonnet-4-5-20250929-v1:0` |
-| Claude 3.7 Sonnet | `us.anthropic.claude-3-7-sonnet-20250219-v1:0` |
-| Claude 3.5 Sonnet v2 | `us.anthropic.claude-3-5-sonnet-20241022-v2:0` |
-| Claude 3 Haiku | `us.anthropic.claude-3-haiku-20240307-v1:0` |
-| Nova Pro | `us.amazon.nova-pro-v1:0` |
-| Nova Lite | `us.amazon.nova-lite-v1:0` |
-| Nova Micro | `us.amazon.nova-micro-v1:0` |
-| Llama 3.3 70B Instruct | `us.meta.llama3-3-70b-instruct-v1:0` |
-| Mistral Large 3 | `mistral.mistral-large-3-675b-instruct` |
+### Using `models.json`
 
-You can also send short aliases directly (`claude-sonnet-4-5`, `nova-pro`, `gpt-4`, etc.) in API requests — see [SPECS.md](SPECS.md) for the full alias and name-mapping tables.
+Placing a `models.json` file in the project root lets you control the model list without an AWS
+management-plane API call. Generate it from the AWS CLI and copy it:
 
-> **Enable model access first.** Go to the [AWS Bedrock console](https://console.aws.amazon.com/bedrock/) → **Model access** and request access for each model you want to use. Without this step requests will fail with a `ResourceNotFoundException`.
+```bash
+aws bedrock list-foundation-models --region us-east-1 > models.json
+```
+
+A `models.json.example` is included in the repository as a reference.
+
+Models that support `INFERENCE_PROFILE` (cross-region inference) are automatically prefixed with
+`CROSS_REGION_PREFIX` (default `global`). For single-region setups override this:
+
+```bash
+export CROSS_REGION_PREFIX=us   # use us.* profile IDs instead of global.*
+```
+
+> **Enable model access first.** Go to the [AWS Bedrock console](https://console.aws.amazon.com/bedrock/)
+> → **Model access** and request access for each model you want to use. Without this step requests
+> will fail with a `ResourceNotFoundException`.
 
 ---
 
 ## Image input
 
-The proxy supports multi-modal image input on both the OpenAI (`/v1/chat/completions`) and Anthropic (`/v1/messages`) endpoints for models that accept images (Claude Sonnet 4.x / Haiku 4.x / Opus 4.x, Nova Pro / Lite, Llama 3.2 Vision, Pixtral Large).
+The proxy supports multi-modal image input on both the OpenAI (`/v1/chat/completions`) and Anthropic (`/v1/messages`) endpoints for models that accept images. Image capability is determined from `inputModalities` in `models.json` when that file is present; otherwise a built-in prefix list is used.
 
 - **Formats:** JPEG, PNG, GIF, WebP
 - **Size limit:** 3.75 MB per image (decoded)
@@ -289,6 +301,7 @@ gitignored — the server starts with env vars only if neither file is present.
 | `PROXY_API_KEY` | — | Auth key for OpenAI endpoints. Auth disabled if unset. |
 | `PORT` | `8080` | HTTP listen port |
 | `LOG_LEVEL` | `info` | Vapor log level (`debug` shows raw Xcode payloads) |
+| `CROSS_REGION_PREFIX` | `global` | Prefix prepended to cross-region inference profile IDs when using `models.json` (e.g. `us`, `eu`, `ap`, `global`) |
 
 ### `.env` file (dotenv, optional, gitignored)
 

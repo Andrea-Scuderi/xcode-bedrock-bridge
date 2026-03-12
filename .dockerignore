@@ -5,6 +5,7 @@
 # Tests/ must be present — SPM validates all target paths at planning time.
 .env
 config.json
+models.json
 .netrc
 .DS_Store
 .vscode/

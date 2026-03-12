@@ -55,6 +55,13 @@ struct AppConfigurationDefaultsTests {
         #expect(config.bindHost == "127.0.0.1")
     }
 
+    @Test("default cross-region prefix is global when CROSS_REGION_PREFIX is not set")
+    func defaultCrossRegionPrefixIsGlobal() {
+        guard ProcessInfo.processInfo.environment["CROSS_REGION_PREFIX"] == nil else { return }
+        let config = AppConfiguration()
+        #expect(config.crossRegionPrefix == "global")
+    }
+
     @Test("optionalBedrockService is nil before BedrockService is initialized")
     func optionalBedrockServiceIsNilBeforeInitialization() async throws {
         try await withApp({ _ in }) { app in

@@ -68,10 +68,14 @@ struct MessagesController: RouteCollection {
         }
 
         let modelID = modelMapper.bedrockModelID(for: request.model)
-        req.logger.debug("bedrockModelID: \(request.model) → \(modelID)")
+        req.logger.info("bedrockModelID: \(request.model) → \(modelID)")
         let messageID = "msg_\(UUID().uuidString.replacingOccurrences(of: "-", with: ""))"
 
-        let (system, msgs, inferenceConfig, toolConfig) = try requestTranslator.translate(request: request, resolvedModelID: modelID)
+        let (system, msgs, inferenceConfig, toolConfig) = try requestTranslator.translate(
+            request: request,
+            resolvedModelID: modelID,
+            modelMapper: modelMapper
+        )
 
         if request.stream == true {
             return try await handleStreaming(
@@ -126,7 +130,9 @@ struct MessagesController: RouteCollection {
                 response: bedrockResponse, model: request.model, messageID: messageID
             )
             req.logger.info("tokens input=\(anthropicResponse.usage.inputTokens) output=\(anthropicResponse.usage.outputTokens)")
-            return try await anthropicResponse.encodeResponse(for: req)
+            let httpResponse = try await anthropicResponse.encodeResponse(for: req)
+            httpResponse.headers.replaceOrAdd(name: "anthropic-version", value: "2023-06-01")
+            return httpResponse
         } catch {
             req.logger.error("Bedrock error: \(error)")
             let status = BedrockService.httpStatus(for: error)
@@ -167,6 +173,7 @@ struct MessagesController: RouteCollection {
         response.headers.replaceOrAdd(name: .contentType, value: "text/event-stream")
         response.headers.replaceOrAdd(name: .cacheControl, value: "no-cache")
         response.headers.replaceOrAdd(name: "X-Accel-Buffering", value: "no")
+        response.headers.replaceOrAdd(name: "anthropic-version", value: "2023-06-01")
 
         response.body = .init(asyncStream: { writer in
             do {

@@ -3,7 +3,7 @@ import SotoBedrockRuntime
 
 struct AnthropicRequestTranslator: Sendable {
 
-    func translate(request: AnthropicRequest, resolvedModelID: String) throws -> (
+    func translate(request: AnthropicRequest, resolvedModelID: String, modelMapper: ModelMapper) throws -> (
         system: [BedrockRuntime.SystemContentBlock],
         messages: [BedrockRuntime.Message],
         inferenceConfig: BedrockRuntime.InferenceConfiguration,
@@ -14,7 +14,7 @@ struct AnthropicRequestTranslator: Sendable {
                 block.type == "image" && block.source != nil
             }
         }
-        if hasImages && !ModelMapper.supportsImageInput(bedrockID: resolvedModelID) {
+        if hasImages && !modelMapper.supportsImageInput(bedrockID: resolvedModelID) {
             throw ImageTranslationError.unsupportedModel(resolvedModelID)
         }
 
@@ -22,6 +22,7 @@ struct AnthropicRequestTranslator: Sendable {
         let messages = try request.messages.compactMap { try translateMessage($0) }
         let inferenceConfig = BedrockRuntime.InferenceConfiguration(
             maxTokens: request.maxTokens,
+            stopSequences: request.stopSequences,
             temperature: request.temperature.map { Float($0) },
             topP: request.topP.map { Float($0) }
         )

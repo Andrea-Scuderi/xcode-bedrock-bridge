@@ -9,7 +9,8 @@ struct RequestTranslator: Sendable {
     /// does not support vision input, or when an image is invalid or too large.
     func translate(
         request: ChatCompletionRequest,
-        modelID: String
+        modelID: String,
+        modelMapper: ModelMapper
     ) throws -> (
         system: [BedrockRuntime.SystemContentBlock],
         messages: [BedrockRuntime.Message],
@@ -27,7 +28,7 @@ struct RequestTranslator: Sendable {
         }
 
         let hasImages = conversationMessages.contains { $0.content.hasImages }
-        if hasImages && !ModelMapper.supportsImageInput(bedrockID: modelID) {
+        if hasImages && !modelMapper.supportsImageInput(bedrockID: modelID) {
             throw ImageTranslationError.unsupportedModel(modelID)
         }
 

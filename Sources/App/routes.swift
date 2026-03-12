@@ -3,7 +3,7 @@ import Vapor
 public func routes(_ app: Application) throws {
     let config = app.appConfiguration
     let bedrockService = app.bedrockService
-    let modelMapper = ModelMapper(defaultModel: config.defaultBedrockModel)
+    let modelMapper = ModelMapper(defaultModel: config.defaultBedrockModel, configuredModels: config.configuredModels, crossRegionPrefix: config.crossRegionPrefix)
     let requestTranslator = RequestTranslator()
     let responseTranslator = ResponseTranslator()
     let anthropicRequestTranslator = AnthropicRequestTranslator()

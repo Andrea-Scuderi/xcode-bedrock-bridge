@@ -12,3 +12,4 @@ DerivedData/
 
 .env
 config.json
+models.json

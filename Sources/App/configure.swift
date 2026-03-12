@@ -29,6 +29,17 @@ public func configure(_ app: Application) async throws {
         app.logger.info("Bedrock auth: default AWS credential chain")
     }
     app.logger.info("Default Bedrock model: \(config.defaultBedrockModel)")
+    app.logger.info("Cross-region prefix: \(config.crossRegionPrefix)")
+    if let models = config.configuredModels {
+        app.logger.info("Configured models: \(models.count) entries loaded from models.json")
+        for model in models.sorted(by: { ($0.modelName ?? $0.modelId) < ($1.modelName ?? $1.modelId) }) {
+            let name = model.modelName ?? model.modelId
+            let active = model.isActive ? "" : " (inactive)"
+            app.logger.info("  - \(name): \(model.modelId)\(active)")
+        }
+    } else {
+        app.logger.info("Configured models: none (models.json not found — using live AWS list)")
+    }
     app.logger.info("Port: \(config.port)")
     app.logger.info("Bind host: \(config.bindHost)")
     if let key = config.proxyAPIKey {
