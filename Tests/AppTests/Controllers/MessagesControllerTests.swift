@@ -52,7 +52,8 @@ private struct MockBedrockConversable: BedrockConversable {
         system: [BedrockRuntime.SystemContentBlock],
         messages: [BedrockRuntime.Message],
         inferenceConfig: BedrockRuntime.InferenceConfiguration,
-        onUsage: (@Sendable (_ inputTokens: Int, _ outputTokens: Int) -> Void)?
+        onUsage: (@Sendable (_ inputTokens: Int, _ outputTokens: Int) -> Void)?,
+        onStop: (@Sendable (_ stopReason: BedrockRuntime.StopReason?) -> Void)?
     ) async throws -> AsyncThrowingStream<String, Error> {
         throw MockBedrockError.wrongMethodCalled
     }

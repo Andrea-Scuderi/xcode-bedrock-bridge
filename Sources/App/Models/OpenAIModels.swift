@@ -78,6 +78,12 @@ private func parseDataURL(_ url: String) -> ImageData? {
     return ImageData(format: format, base64Data: base64Data)
 }
 
+// MARK: - Chat Completion Request helpers
+
+struct ResponseFormat: Codable, Sendable {
+    let type: String
+}
+
 // MARK: - Chat Completion Request
 
 struct ChatCompletionRequest: Content {
@@ -88,11 +94,82 @@ struct ChatCompletionRequest: Content {
     let topP: Double?
     let stream: Bool?
     let stop: [String]?
+    // Fields decoded but not forwarded to Bedrock
+    let n: Int?
+    let logprobs: Bool?
+    let seed: Int?
+    let user: String?
+    let frequencyPenalty: Double?
+    let presencePenalty: Double?
+    let responseFormat: ResponseFormat?
+    let tools: [JSONValue]?
+    let toolChoice: JSONValue?
+
+    /// Memberwise init — new optional params default to nil so existing call-sites don't break.
+    init(
+        model: String,
+        messages: [ChatMessage],
+        maxTokens: Int? = nil,
+        temperature: Double? = nil,
+        topP: Double? = nil,
+        stream: Bool? = nil,
+        stop: [String]? = nil,
+        n: Int? = nil,
+        logprobs: Bool? = nil,
+        seed: Int? = nil,
+        user: String? = nil,
+        frequencyPenalty: Double? = nil,
+        presencePenalty: Double? = nil,
+        responseFormat: ResponseFormat? = nil,
+        tools: [JSONValue]? = nil,
+        toolChoice: JSONValue? = nil
+    ) {
+        self.model = model
+        self.messages = messages
+        self.maxTokens = maxTokens
+        self.temperature = temperature
+        self.topP = topP
+        self.stream = stream
+        self.stop = stop
+        self.n = n
+        self.logprobs = logprobs
+        self.seed = seed
+        self.user = user
+        self.frequencyPenalty = frequencyPenalty
+        self.presencePenalty = presencePenalty
+        self.responseFormat = responseFormat
+        self.tools = tools
+        self.toolChoice = toolChoice
+    }
+
+    init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        model             = try c.decode(String.self,           forKey: .model)
+        messages          = try c.decode([ChatMessage].self,    forKey: .messages)
+        maxTokens         = try c.decodeIfPresent(Int.self,     forKey: .maxTokens)
+        temperature       = try c.decodeIfPresent(Double.self,  forKey: .temperature)
+        topP              = try c.decodeIfPresent(Double.self,  forKey: .topP)
+        stream            = try c.decodeIfPresent(Bool.self,    forKey: .stream)
+        stop              = try c.decodeIfPresent([String].self, forKey: .stop)
+        n                 = try c.decodeIfPresent(Int.self,     forKey: .n)
+        logprobs          = try c.decodeIfPresent(Bool.self,    forKey: .logprobs)
+        seed              = try c.decodeIfPresent(Int.self,     forKey: .seed)
+        user              = try c.decodeIfPresent(String.self,  forKey: .user)
+        frequencyPenalty  = try c.decodeIfPresent(Double.self,  forKey: .frequencyPenalty)
+        presencePenalty   = try c.decodeIfPresent(Double.self,  forKey: .presencePenalty)
+        responseFormat    = try c.decodeIfPresent(ResponseFormat.self, forKey: .responseFormat)
+        tools             = try c.decodeIfPresent([JSONValue].self, forKey: .tools)
+        toolChoice        = try c.decodeIfPresent(JSONValue.self,   forKey: .toolChoice)
+    }
 
     enum CodingKeys: String, CodingKey {
-        case model, messages, temperature, stream, stop
+        case model, messages, temperature, stream, stop, n, logprobs, seed, user, tools
         case maxTokens = "max_tokens"
         case topP = "top_p"
+        case frequencyPenalty = "frequency_penalty"
+        case presencePenalty = "presence_penalty"
+        case responseFormat = "response_format"
+        case toolChoice = "tool_choice"
     }
 }
 
@@ -216,11 +293,46 @@ struct ChunkChoice: Content {
         case index, delta
         case finishReason = "finish_reason"
     }
+
+    /// OpenAI spec requires `finish_reason` to always be present — `null` for
+    /// intermediate chunks, a string value for the final stop chunk.
+    /// Swift's synthesised encoder would omit the key when nil (`encodeIfPresent`),
+    /// so we provide an explicit `encode(to:)` that writes `null` instead.
+    func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(index, forKey: .index)
+        try container.encode(delta, forKey: .delta)
+        try container.encode(finishReason, forKey: .finishReason)
+    }
 }
 
 struct ChunkDelta: Content {
     let role: String?
     let content: String?
+
+    private enum CodingKeys: String, CodingKey { case role, content }
+
+    /// `content` must always be present — `null` when absent (e.g. stop chunk) so
+    /// that Xcode's parser never encounters a delta with no `content` key at all.
+    /// `role` is still omitted when nil (only the initial role chunk carries it).
+    func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encodeIfPresent(role, forKey: .role)
+        try container.encode(content, forKey: .content)
+    }
+}
+
+// MARK: - Error Response
+
+struct OpenAIErrorDetail: Content {
+    let message: String
+    let type: String
+    let param: String?
+    let code: String?
+}
+
+struct OpenAIErrorResponse: Content {
+    let error: OpenAIErrorDetail
 }
 
 // MARK: - Models List

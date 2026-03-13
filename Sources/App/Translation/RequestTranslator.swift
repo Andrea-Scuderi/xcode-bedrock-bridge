@@ -1,3 +1,4 @@
+import Vapor
 import SotoCore
 import SotoBedrockRuntime
 
@@ -36,6 +37,7 @@ struct RequestTranslator: Sendable {
 
         let inferenceConfig = BedrockRuntime.InferenceConfiguration(
             maxTokens: request.maxTokens ?? 4096,
+            stopSequences: request.stop,
             temperature: request.temperature.map { Float($0) },
             topP: request.topP.map { Float($0) }
         )
@@ -61,6 +63,8 @@ struct RequestTranslator: Sendable {
             switch group.role {
             case "user":      role = .user
             case "assistant": role = .assistant
+            case "tool":
+                throw Abort(.unprocessableEntity, reason: "Messages with role 'tool' are not supported on the OpenAI-compatible endpoint. Use the Anthropic /v1/messages endpoint for tool use.")
             default:          return nil
             }
 

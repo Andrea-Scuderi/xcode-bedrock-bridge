@@ -2,6 +2,13 @@ import Vapor
 import Foundation
 import SotoBedrockRuntime
 
+/// Thread-safe box for the stop reason captured from the Bedrock stream.
+/// Write happens (via onStop) before continuation.finish(); read happens after
+/// the for-await loop exits — the structured concurrency ordering makes this safe.
+private final class StopReasonBox: @unchecked Sendable {
+    var value: BedrockRuntime.StopReason? = nil
+}
+
 // MARK: - Input guardrail limits
 
 private let maxMessages          = 100
@@ -37,6 +44,15 @@ struct ChatController: RouteCollection {
             guard text.count <= maxMessageTextLength else {
                 throw Abort(.badRequest, reason: "Message content exceeds maximum allowed length of \(maxMessageTextLength) chars.")
             }
+        }
+        if let n = chatRequest.n, n > 1 {
+            throw Abort(.unprocessableEntity, reason: "Parameter 'n' > 1 is not supported. Only a single completion can be generated.")
+        }
+        if chatRequest.responseFormat?.type == "json_object" {
+            throw Abort(.unprocessableEntity, reason: "response_format 'json_object' is not supported. The model cannot guarantee structured JSON output.")
+        }
+        if let tools = chatRequest.tools, !tools.isEmpty {
+            throw Abort(.unprocessableEntity, reason: "The 'tools' parameter is not supported on the OpenAI-compatible endpoint. Use the Anthropic /v1/messages endpoint for tool use.")
         }
 
         let modelID = modelMapper.bedrockModelID(for: chatRequest.model)
@@ -121,6 +137,7 @@ struct ChatController: RouteCollection {
         // than being buried inside a 200 OK SSE body.
         let textStream: AsyncThrowingStream<String, Error>
         let logger = req.logger
+        let stopBox = StopReasonBox()
         do {
             textStream = try await bedrockService.converseStream(
                 modelID: modelID,
@@ -129,6 +146,9 @@ struct ChatController: RouteCollection {
                 inferenceConfig: inferenceConfig,
                 onUsage: { input, output in
                     logger.info("tokens input=\(input) output=\(output)")
+                },
+                onStop: { reason in
+                    stopBox.value = reason
                 }
             )
         } catch {
@@ -164,7 +184,7 @@ struct ChatController: RouteCollection {
                     model: model,
                     choices: [ChunkChoice(
                         index: 0,
-                        delta: ChunkDelta(role: "assistant", content: nil),
+                        delta: ChunkDelta(role: "assistant", content: ""),
                         finishReason: nil
                     )]
                 )
@@ -183,7 +203,7 @@ struct ChatController: RouteCollection {
                 let stopChunk = translator.stopChunk(
                     model: model,
                     completionID: completionID,
-                    stopReason: nil
+                    stopReason: stopBox.value
                 )
                 try await send(stopChunk)
 
@@ -192,9 +212,6 @@ struct ChatController: RouteCollection {
                 try await writer.write(.end)
             } catch {
                 logger.error("Bedrock streaming error: \(error)")
-                let safeMsg = BedrockService.clientSafeReason(for: error)
-                let errorSSE = "event: error\ndata: {\"error\":\"\(safeMsg)\"}\n\n"
-                try await writer.writeBuffer(ByteBuffer(string: errorSSE))
                 try await writer.write(.end)
             }
         })

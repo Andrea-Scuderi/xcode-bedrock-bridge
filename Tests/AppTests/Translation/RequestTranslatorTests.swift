@@ -1,5 +1,6 @@
 import Testing
 import Foundation
+import Vapor
 @testable import App
 
 @Suite("RequestTranslator")
@@ -147,6 +148,53 @@ struct RequestTranslatorTests {
         let (_, messages, _) = try translator.translate(request: request, modelID: "model-id", modelMapper: mapper)
         // "function" role is unknown → dropped; leaves two separate user messages
         #expect(messages.count == 2)
+    }
+
+    // MARK: - Fix 5: tool role throws proper error
+
+    @Test("tool role message throws unprocessable entity")
+    func toolRoleMessageThrows() throws {
+        let request = ChatCompletionRequest(
+            model: "gpt-4",
+            messages: [
+                ChatMessage(role: "user", content: "What is the weather?"),
+                ChatMessage(role: "tool", content: "It is sunny"),
+            ],
+            maxTokens: 100,
+            temperature: nil,
+            topP: nil,
+            stream: nil,
+            stop: nil
+        )
+        #expect {
+            try translator.translate(request: request, modelID: "model-id", modelMapper: mapper)
+        } throws: { error in
+            guard let abort = error as? Abort else { return false }
+            return abort.status == .unprocessableEntity
+        }
+    }
+
+    @Test("tool role after assistant message throws unprocessable entity")
+    func toolRoleAfterAssistantThrows() throws {
+        let request = ChatCompletionRequest(
+            model: "gpt-4",
+            messages: [
+                ChatMessage(role: "user", content: "Call the tool"),
+                ChatMessage(role: "assistant", content: "Calling..."),
+                ChatMessage(role: "tool", content: "{\"result\":\"done\"}"),
+            ],
+            maxTokens: 100,
+            temperature: nil,
+            topP: nil,
+            stream: nil,
+            stop: nil
+        )
+        #expect {
+            try translator.translate(request: request, modelID: "model-id", modelMapper: mapper)
+        } throws: { error in
+            guard let abort = error as? Abort else { return false }
+            return abort.status == .unprocessableEntity
+        }
     }
 
     // MARK: - Image Support
