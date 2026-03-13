@@ -200,14 +200,16 @@ The `id` field contains the Bedrock `modelName` (e.g. `"Claude 3 Haiku"`, `"Nova
 
 **Streaming response** — Server-Sent Events (SSE), `Content-Type: text/event-stream`:
 ```
-data: {"id":"chatcmpl-...","object":"chat.completion.chunk","created":...,"model":"...","choices":[{"index":0,"delta":{"role":"assistant","content":null},"finish_reason":null}]}
+data: {"id":"chatcmpl-...","object":"chat.completion.chunk","created":...,"model":"...","choices":[{"index":0,"delta":{"role":"assistant","content":""},"finish_reason":null}]}
 
 data: {"id":"chatcmpl-...","object":"chat.completion.chunk","created":...,"model":"...","choices":[{"index":0,"delta":{"content":"Hi"},"finish_reason":null}]}
 
-data: {"id":"chatcmpl-...","object":"chat.completion.chunk","created":...,"model":"...","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}
+data: {"id":"chatcmpl-...","object":"chat.completion.chunk","created":...,"model":"...","choices":[{"index":0,"delta":{"content":null},"finish_reason":"stop"}]}
 
 data: [DONE]
 ```
+
+> `finish_reason` is always present in every chunk (`null` for intermediate chunks, a string value for the final stop chunk). `content` is always present in `delta` (`""` in the first role chunk, the text value in text-delta chunks, `null` in the final stop chunk). These are required for compatibility with Xcode's SSE parser.
 
 Required SSE response headers:
 ```
@@ -381,7 +383,7 @@ Both share a single `AWSClient` instance inside `BedrockService`.
 | `BedrockRuntime.Message` | role + content array |
 | `BedrockRuntime.ContentBlock` | Enum: `.text(String)`, `.toolUse(ToolUseBlock)`, `.toolResult(ToolResultBlock)` |
 | `BedrockRuntime.SystemContentBlock` | Enum: `.text(String)` |
-| `BedrockRuntime.InferenceConfiguration` | `maxTokens`, `temperature: Float?`, `topP: Float?` |
+| `BedrockRuntime.InferenceConfiguration` | `maxTokens`, `stopSequences: [String]?`, `temperature: Float?`, `topP: Float?` |
 | `BedrockRuntime.ToolConfiguration` | `tools: [Tool]`, `toolChoice: ToolChoice?` |
 | `BedrockRuntime.Tool` | Enum: `.toolSpec(ToolSpecification)` |
 | `BedrockRuntime.ToolSpecification` | `name`, `description?`, `inputSchema: ToolInputSchema` |
@@ -592,15 +594,11 @@ The Anthropic-format endpoints (`/v1/messages`, `/v1/messages/count_tokens`) are
 
 ### Streaming Error Recovery
 
-For streaming responses, errors that occur **before** the first SSE byte is sent are returned as a proper HTTP error (status code + JSON body). Errors that occur **mid-stream** (after `200 OK` is committed) are sent as a final SSE error event:
+For streaming responses, errors that occur **before** the first SSE byte is sent are returned as a proper HTTP error (status code + JSON body). Errors that occur **mid-stream** (after `200 OK` is committed) are handled differently per path:
 
-OpenAI format:
-```
-event: error
-data: {"error":"<message>"}
-```
+**OpenAI path** — the SSE connection is closed immediately (no error event is written). Xcode detects the closed stream and surfaces the error through its own retry/error UI.
 
-Anthropic format:
+**Anthropic path** — a final SSE error event is written before closing:
 ```
 event: error
 data: {"type":"error","error":{"type":"api_error","message":"<message>"}}
