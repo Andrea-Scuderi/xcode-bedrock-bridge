@@ -1,5 +1,6 @@
 import Testing
 import Foundation
+import SotoCore
 import SotoBedrockRuntime
 @testable import App
 
@@ -92,8 +93,8 @@ struct ResponseTranslatorTests {
         #expect(delta["content"] == .null)
     }
 
-    @Test("intermediate chunk encodes finish_reason as null (not omitted)")
-    func intermediateChunkFinishReasonIsExplicitNull() throws {
+    @Test("intermediate chunk omits finish_reason entirely (not null)")
+    func intermediateChunkFinishReasonIsAbsent() throws {
         let chunk = translator.streamChunk(text: "Hi", model: "m", completionID: "id")
         let data = try JSONEncoder().encode(chunk)
         let json = try JSONDecoder().decode([String: JSONValue].self, from: data)
@@ -103,9 +104,8 @@ struct ResponseTranslatorTests {
             Issue.record("choices array missing or malformed")
             return
         }
-        // finish_reason key must be present and its value must be null
-        #expect(choice["finish_reason"] != nil, "finish_reason key must always be present")
-        #expect(choice["finish_reason"] == .null)
+        // finish_reason must be absent for intermediate chunks — never null
+        #expect(choice["finish_reason"] == nil)
     }
 
     @Test("stop chunk encodes finish_reason as 'stop' (not null)")
@@ -134,5 +134,93 @@ struct ResponseTranslatorTests {
             return
         }
         #expect(choice["finish_reason"] == .string("length"))
+    }
+
+    // MARK: - Tool Calling
+
+    @Test("toolUse stop reason maps to 'tool_calls'")
+    func stopReasonToolUseMapsToToolCalls() {
+        let chunk = translator.stopChunk(model: "m", completionID: "id", stopReason: .toolUse)
+        #expect(chunk.choices[0].finishReason == "tool_calls")
+    }
+
+    @Test("toolCallStartChunk carries id, type, name and empty arguments")
+    func toolCallStartChunkStructure() throws {
+        let chunk = translator.toolCallStartChunk(
+            index: 0, id: "call-123", name: "get_weather",
+            model: "m", completionID: "id"
+        )
+        let data = try JSONEncoder().encode(chunk)
+        let json = try JSONDecoder().decode([String: JSONValue].self, from: data)
+        guard case .array(let choices) = json["choices"],
+              case .object(let choice) = choices.first,
+              case .object(let delta) = choice["delta"],
+              case .array(let toolCalls) = delta["tool_calls"],
+              case .object(let tc) = toolCalls.first else {
+            Issue.record("structure missing or malformed")
+            return
+        }
+        #expect(tc["id"] == .string("call-123"))
+        #expect(tc["type"] == .string("function"))
+        #expect(choice["finish_reason"] == nil)
+        // content must be null when tool_calls is present
+        #expect(delta["content"] == .null)
+        guard case .object(let fn) = tc["function"] else {
+            Issue.record("function missing"); return
+        }
+        #expect(fn["name"] == .string("get_weather"))
+        #expect(fn["arguments"] == .string(""))
+    }
+
+    @Test("toolCallDeltaChunk has nil id and nil type with argument delta")
+    func toolCallDeltaChunkStructure() throws {
+        let chunk = translator.toolCallDeltaChunk(
+            index: 0, argumentsDelta: "{\"loc",
+            model: "m", completionID: "id"
+        )
+        let data = try JSONEncoder().encode(chunk)
+        let json = try JSONDecoder().decode([String: JSONValue].self, from: data)
+        guard case .array(let choices) = json["choices"],
+              case .object(let choice) = choices.first,
+              case .object(let delta) = choice["delta"],
+              case .array(let toolCalls) = delta["tool_calls"],
+              case .object(let tc) = toolCalls.first else {
+            Issue.record("structure missing or malformed")
+            return
+        }
+        // id and type must be absent or null for delta chunks
+        #expect(tc["id"] == nil || tc["id"] == .null)
+        #expect(tc["type"] == nil || tc["type"] == .null)
+        guard case .object(let fn) = tc["function"] else {
+            Issue.record("function missing"); return
+        }
+        #expect(fn["arguments"] == .string("{\"loc"))
+    }
+
+    @Test("non-streaming response with toolUse block produces tool_calls")
+    func nonStreamingToolUseBlockProducesToolCalls() {
+        let toolInput: AWSDocument = .map(["location": .string("Boston")])
+        let response = BedrockRuntime.ConverseResponse(
+            metrics: BedrockRuntime.ConverseMetrics(latencyMs: 0),
+            output: BedrockRuntime.ConverseOutput(
+                message: BedrockRuntime.Message(
+                    content: [.toolUse(BedrockRuntime.ToolUseBlock(
+                        input: toolInput,
+                        name: "get_weather",
+                        toolUseId: "call-abc"
+                    ))],
+                    role: .assistant
+                )
+            ),
+            stopReason: .toolUse,
+            usage: BedrockRuntime.TokenUsage(inputTokens: 10, outputTokens: 5, totalTokens: 15)
+        )
+        let result = translator.translate(response: response, model: "m", completionID: "id")
+        #expect(result.choices[0].finishReason == "tool_calls")
+        let toolCalls = result.choices[0].message.toolCalls
+        #expect(toolCalls != nil)
+        #expect(toolCalls?.count == 1)
+        #expect(toolCalls?.first?.function.name == "get_weather")
+        #expect(toolCalls?.first?.id == "call-abc")
     }
 }

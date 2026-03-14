@@ -1,7 +1,7 @@
 # xcode-bedrock-bridge — Technical Specification
 
 Vapor HTTP proxy that bridges **Xcode 26.3 AI features** to **Amazon Bedrock** (Claude models).
-Last updated: February 2026.
+Last updated: March 2026.
 
 ---
 
@@ -9,7 +9,7 @@ Last updated: February 2026.
 
 1. [Architecture Overview](#1-architecture-overview)
 2. [Xcode Integration Modes](#2-xcode-integration-modes)
-3. [OpenAI-Compatible API (Xcode Intelligence)](#3-openai-compatible-api-xcode-intelligence)
+3. [OpenAI-Compatible API (Xcode Intelligence)](#3-openai-compatible-api-xcode-intelligence) — includes tool/function calling
 4. [Anthropic Messages API (Xcode Coding Agent)](#4-anthropic-messages-api-xcode-coding-agent)
 5. [Amazon Bedrock Converse API](#5-amazon-bedrock-converse-api)
 6. [Model IDs & Mapping](#6-model-ids--mapping)
@@ -200,16 +200,16 @@ The `id` field contains the Bedrock `modelName` (e.g. `"Claude 3 Haiku"`, `"Nova
 
 **Streaming response** — Server-Sent Events (SSE), `Content-Type: text/event-stream`:
 ```
-data: {"id":"chatcmpl-...","object":"chat.completion.chunk","created":...,"model":"...","choices":[{"index":0,"delta":{"role":"assistant","content":""},"finish_reason":null}]}
+data: {"id":"chatcmpl-...","object":"chat.completion.chunk","created":...,"model":"...","choices":[{"index":0,"delta":{"role":"assistant","content":""}}]}
 
-data: {"id":"chatcmpl-...","object":"chat.completion.chunk","created":...,"model":"...","choices":[{"index":0,"delta":{"content":"Hi"},"finish_reason":null}]}
+data: {"id":"chatcmpl-...","object":"chat.completion.chunk","created":...,"model":"...","choices":[{"index":0,"delta":{"content":"Hi"}}]}
 
 data: {"id":"chatcmpl-...","object":"chat.completion.chunk","created":...,"model":"...","choices":[{"index":0,"delta":{"content":null},"finish_reason":"stop"}]}
 
 data: [DONE]
 ```
 
-> `finish_reason` is always present in every chunk (`null` for intermediate chunks, a string value for the final stop chunk). `content` is always present in `delta` (`""` in the first role chunk, the text value in text-delta chunks, `null` in the final stop chunk). These are required for compatibility with Xcode's SSE parser.
+> `finish_reason` is **omitted** in intermediate chunks and present as a string only in the final stop chunk (`"stop"`, `"tool_calls"`, `"length"`). `content` is always present in `delta` in text chunks (`""` in the role chunk, the text value in delta chunks, `null` in the stop chunk).
 
 Required SSE response headers:
 ```
@@ -217,6 +217,109 @@ Content-Type: text/event-stream
 Cache-Control: no-cache
 X-Accel-Buffering: no
 ```
+
+### 3.3 Tool / Function Calling
+
+The `/v1/chat/completions` endpoint supports OpenAI-compatible tool calling.
+
+**Request with tools:**
+```json
+{
+  "model": "claude-sonnet-4-5",
+  "messages": [{"role": "user", "content": "What is the weather in Paris?"}],
+  "tools": [
+    {
+      "type": "function",
+      "function": {
+        "name": "get_weather",
+        "description": "Get weather for a location",
+        "parameters": {
+          "type": "object",
+          "properties": {"location": {"type": "string"}},
+          "required": ["location"]
+        }
+      }
+    }
+  ],
+  "tool_choice": "auto"
+}
+```
+
+`tool_choice` values: `"auto"` | `"required"` (maps to Bedrock `any`) | `"none"` (omits toolConfig entirely) | `{"type":"function","function":{"name":"..."}}` (maps to Bedrock `specific`).
+
+**Non-streaming response when Claude calls a tool:**
+```json
+{
+  "choices": [{
+    "index": 0,
+    "message": {
+      "role": "assistant",
+      "content": null,
+      "tool_calls": [{
+        "id": "call_abc123",
+        "type": "function",
+        "function": {
+          "name": "get_weather",
+          "arguments": "{\"location\": \"Paris\"}"
+        }
+      }]
+    },
+    "finish_reason": "tool_calls"
+  }]
+}
+```
+
+`arguments` is `null` when the tool has no parameters (never `"{}"`).
+
+**Streaming tool-call SSE sequence:**
+```
+data: {"choices":[{"index":0,"delta":{"role":"assistant","content":""}}]}
+
+data: {"choices":[{"index":0,"delta":{"content":null,"tool_calls":[{"index":0,"id":"call_abc","type":"function","function":{"name":"get_weather","arguments":""}}]}}]}
+
+data: {"choices":[{"index":0,"delta":{"content":null,"tool_calls":[{"index":0,"function":{"arguments":"{\"location\":"}}]}}]}
+
+data: {"choices":[{"index":0,"delta":{"content":null,"tool_calls":[{"index":0,"function":{"arguments":"\"Paris\"}"}}]}}]}
+
+data: {"choices":[{"index":0,"delta":{"content":null},"finish_reason":"tool_calls"}]}
+
+data: [DONE]
+```
+
+**Multi-turn: sending tool results back:**
+
+```json
+{
+  "messages": [
+    {"role": "user", "content": "Weather in Paris?"},
+    {
+      "role": "assistant",
+      "content": null,
+      "tool_calls": [{"id": "call_abc123", "type": "function",
+                      "function": {"name": "get_weather", "arguments": "{\"location\":\"Paris\"}"}}]
+    },
+    {"role": "tool", "tool_call_id": "call_abc123", "content": "Cloudy, 15°C"}
+  ],
+  "tools": [...]
+}
+```
+
+`role: "tool"` messages are translated to Bedrock `user` role with `.toolResult` content blocks. Consecutive `tool` messages are merged into a single Bedrock user message.
+
+#### OpenAI tool → Bedrock translation
+
+| OpenAI field | Bedrock field |
+|---|---|
+| `tools[].function.name` | `ToolSpecification.name` |
+| `tools[].function.description` | `ToolSpecification.description` |
+| `tools[].function.parameters` (JSONValue) | `ToolInputSchema(json: AWSDocument)` |
+| `tool_choice: "auto"` | `ToolChoice.auto(AutoToolChoice())` |
+| `tool_choice: "required"` | `ToolChoice.any(AnyToolChoice())` |
+| `tool_choice: "none"` | omit `toolConfig` entirely |
+| `tool_choice: {type:"function",function:{name:...}}` | `ToolChoice.tool(SpecificToolChoice(name:))` |
+| `message.tool_calls[].function.arguments` (JSON string) | `ToolUseBlock.input: AWSDocument` |
+| `message.role == "tool"`, `tool_call_id` | `ContentBlock.toolResult(ToolResultBlock)` in user message |
+| `stopReason == .toolUse` | `finish_reason: "tool_calls"` |
 
 ---
 
@@ -431,6 +534,18 @@ Both share a single `AWSClient` instance inside `BedrockService`.
 | `tool_choice.type == "tool"` | `ToolChoice.tool(SpecificToolChoice(name:))` |
 | `tool_choice.type == "none"` | omit `toolConfig` entirely |
 | `max_tokens`, `temperature`, `top_p` | `InferenceConfiguration` |
+
+#### Response: Bedrock → OpenAI
+
+| Bedrock field | OpenAI field |
+|---|---|
+| `ConverseOutput.message.content[.text(s)]` | `choices[0].message.content` (string) |
+| `ConverseOutput.message.content[.toolUse(b)]` | `choices[0].message.tool_calls[{id,type:"function",function:{name,arguments}}]` |
+| `ToolUseBlock.input` (AWSDocument) | `ToolCallFunction.arguments` (JSON string; `null` if empty map) |
+| `stopReason == .endTurn` | `finish_reason: "stop"` |
+| `stopReason == .maxTokens` | `finish_reason: "length"` |
+| `stopReason == .toolUse` | `finish_reason: "tool_calls"` |
+| `usage.inputTokens` / `.outputTokens` / `.totalTokens` | `usage.prompt_tokens` / `completion_tokens` / `total_tokens` |
 
 #### Response: Bedrock → Anthropic
 

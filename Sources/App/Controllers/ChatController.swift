@@ -51,15 +51,12 @@ struct ChatController: RouteCollection {
         if chatRequest.responseFormat?.type == "json_object" {
             throw Abort(.unprocessableEntity, reason: "response_format 'json_object' is not supported. The model cannot guarantee structured JSON output.")
         }
-        if let tools = chatRequest.tools, !tools.isEmpty {
-            throw Abort(.unprocessableEntity, reason: "The 'tools' parameter is not supported on the OpenAI-compatible endpoint. Use the Anthropic /v1/messages endpoint for tool use.")
-        }
 
         let modelID = modelMapper.bedrockModelID(for: chatRequest.model)
         req.logger.info("bedrockModelID: \(chatRequest.model) → \(modelID)")
         let completionID = "chatcmpl-\(UUID().uuidString)"
 
-        let (system, messages, inferenceConfig) = try requestTranslator.translate(
+        let (system, messages, inferenceConfig, toolConfig) = try requestTranslator.translate(
             request: chatRequest,
             modelID: modelID,
             modelMapper: modelMapper
@@ -73,7 +70,8 @@ struct ChatController: RouteCollection {
                 completionID: completionID,
                 system: system,
                 messages: messages,
-                inferenceConfig: inferenceConfig
+                inferenceConfig: inferenceConfig,
+                toolConfig: toolConfig
             )
         } else {
             return try await handleNonStreaming(
@@ -83,7 +81,8 @@ struct ChatController: RouteCollection {
                 completionID: completionID,
                 system: system,
                 messages: messages,
-                inferenceConfig: inferenceConfig
+                inferenceConfig: inferenceConfig,
+                toolConfig: toolConfig
             )
         }
     }
@@ -97,7 +96,8 @@ struct ChatController: RouteCollection {
         completionID: String,
         system: [BedrockRuntime.SystemContentBlock],
         messages: [BedrockRuntime.Message],
-        inferenceConfig: BedrockRuntime.InferenceConfiguration
+        inferenceConfig: BedrockRuntime.InferenceConfiguration,
+        toolConfig: BedrockRuntime.ToolConfiguration?
     ) async throws -> Response {
         do {
             let bedrockResponse = try await bedrockService.converse(
@@ -105,7 +105,7 @@ struct ChatController: RouteCollection {
                 system: system,
                 messages: messages,
                 inferenceConfig: inferenceConfig,
-                toolConfig: nil
+                toolConfig: toolConfig
             )
             let openAIResponse = responseTranslator.translate(
                 response: bedrockResponse,
@@ -130,8 +130,24 @@ struct ChatController: RouteCollection {
         completionID: String,
         system: [BedrockRuntime.SystemContentBlock],
         messages: [BedrockRuntime.Message],
-        inferenceConfig: BedrockRuntime.InferenceConfiguration
+        inferenceConfig: BedrockRuntime.InferenceConfiguration,
+        toolConfig: BedrockRuntime.ToolConfiguration?
     ) async throws -> Response {
+        // Dispatch to the tool-aware streaming path when tools are configured.
+        if let toolConfig {
+            return try await handleStreamingWithTools(
+                req: req,
+                chatRequest: chatRequest,
+                modelID: modelID,
+                completionID: completionID,
+                system: system,
+                messages: messages,
+                inferenceConfig: inferenceConfig,
+                toolConfig: toolConfig
+            )
+        }
+
+        // Text-only streaming path.
         // Perform the Bedrock handshake before opening the SSE response so that
         // access / auth errors are returned as proper HTTP error codes rather
         // than being buried inside a 200 OK SSE body.
@@ -205,6 +221,130 @@ struct ChatController: RouteCollection {
                     completionID: completionID,
                     stopReason: stopBox.value
                 )
+                try await send(stopChunk)
+
+                logger.debug("Streaming [DONE]")
+                try await writer.writeBuffer(ByteBuffer(string: "data: [DONE]\n\n"))
+                try await writer.write(.end)
+            } catch {
+                logger.error("Bedrock streaming error: \(error)")
+                try await writer.write(.end)
+            }
+        })
+
+        return response
+    }
+
+    // MARK: - Streaming with Tools
+
+    private func handleStreamingWithTools(
+        req: Request,
+        chatRequest: ChatCompletionRequest,
+        modelID: String,
+        completionID: String,
+        system: [BedrockRuntime.SystemContentBlock],
+        messages: [BedrockRuntime.Message],
+        inferenceConfig: BedrockRuntime.InferenceConfiguration,
+        toolConfig: BedrockRuntime.ToolConfiguration
+    ) async throws -> Response {
+        let rawStream: AsyncThrowingStream<BedrockRuntime.ConverseStreamOutput, Error>
+        let logger = req.logger
+        do {
+            rawStream = try await bedrockService.converseStreamRaw(
+                modelID: modelID,
+                system: system,
+                messages: messages,
+                inferenceConfig: inferenceConfig,
+                toolConfig: toolConfig
+            )
+        } catch {
+            logger.error("Bedrock error: \(error)")
+            let status = BedrockService.httpStatus(for: error)
+            throw Abort(status, reason: BedrockService.clientSafeReason(for: error))
+        }
+
+        let model = chatRequest.model
+        let encoder = JSONEncoder()
+        let translator = responseTranslator
+
+        let response = Response(status: .ok)
+        response.headers.replaceOrAdd(name: .contentType, value: "text/event-stream")
+        response.headers.replaceOrAdd(name: .cacheControl, value: "no-cache")
+        response.headers.replaceOrAdd(name: "X-Accel-Buffering", value: "no")
+
+        response.body = .init(asyncStream: { writer in
+            func send(_ chunk: some Encodable) async throws {
+                guard let data = try? encoder.encode(chunk),
+                      let jsonStr = String(data: data, encoding: .utf8) else { return }
+                let sseStr = "data: \(jsonStr)\n\n"
+                logger.debug("Streaming SSE: \(sseStr)")
+                try await writer.writeBuffer(ByteBuffer(string: sseStr))
+            }
+
+            do {
+                // Initial role chunk — use "" (not nil) to keep content as a string,
+                // matching the text-streaming path and avoiding content: null.
+                let roleChunk = ChatCompletionChunk(
+                    id: completionID,
+                    object: "chat.completion.chunk",
+                    created: Int(Date().timeIntervalSince1970),
+                    model: model,
+                    choices: [ChunkChoice(
+                        index: 0,
+                        delta: ChunkDelta(role: "assistant", content: ""),
+                        finishReason: nil
+                    )]
+                )
+                try await send(roleChunk)
+
+                // Map Bedrock contentBlockIndex → OpenAI tool_calls index
+                var toolIndexByBlock: [Int: Int] = [:]
+                var nextToolIndex = 0
+                var stopReason: BedrockRuntime.StopReason? = nil
+
+                for try await event in rawStream {
+                    switch event {
+                    case .contentBlockStart(let e):
+                        if case .toolUse(let tu) = e.start {
+                            let toolIndex = nextToolIndex
+                            toolIndexByBlock[e.contentBlockIndex] = toolIndex
+                            nextToolIndex += 1
+                            let chunk = translator.toolCallStartChunk(
+                                index: toolIndex,
+                                id: tu.toolUseId,
+                                name: tu.name,
+                                model: model,
+                                completionID: completionID
+                            )
+                            try await send(chunk)
+                        }
+                    case .contentBlockDelta(let e):
+                        switch e.delta {
+                        case .text(let text):
+                            let chunk = translator.streamChunk(text: text, model: model, completionID: completionID)
+                            try await send(chunk)
+                        case .toolUse(let tu):
+                            let toolIndex = toolIndexByBlock[e.contentBlockIndex] ?? 0
+                            let chunk = translator.toolCallDeltaChunk(
+                                index: toolIndex,
+                                argumentsDelta: tu.input,
+                                model: model,
+                                completionID: completionID
+                            )
+                            try await send(chunk)
+                        default:
+                            break
+                        }
+                    case .messageStop(let e):
+                        stopReason = e.stopReason
+                    case .metadata(let e):
+                        logger.info("tokens input=\(e.usage.inputTokens) output=\(e.usage.outputTokens)")
+                    default:
+                        break
+                    }
+                }
+
+                let stopChunk = translator.stopChunk(model: model, completionID: completionID, stopReason: stopReason)
                 try await send(stopChunk)
 
                 logger.debug("Streaming [DONE]")
