@@ -68,7 +68,8 @@ actor BedrockService {
         system: [BedrockRuntime.SystemContentBlock],
         messages: [BedrockRuntime.Message],
         inferenceConfig: BedrockRuntime.InferenceConfiguration,
-        onUsage: (@Sendable (_ inputTokens: Int, _ outputTokens: Int) -> Void)? = nil
+        onUsage: (@Sendable (_ inputTokens: Int, _ outputTokens: Int) -> Void)? = nil,
+        onStop: (@Sendable (_ stopReason: BedrockRuntime.StopReason?) -> Void)? = nil
     ) async throws -> AsyncThrowingStream<String, Error> {
         let request = BedrockRuntime.ConverseStreamRequest(
             inferenceConfig: inferenceConfig,
@@ -93,9 +94,8 @@ actor BedrockService {
                             }
                         case .metadata(let e):
                             onUsage?(e.usage.inputTokens, e.usage.outputTokens)
-                        case .messageStop:
-                            continuation.finish()
-                            return
+                        case .messageStop(let e):
+                            onStop?(e.stopReason)
                         default:
                             break
                         }
@@ -191,7 +191,8 @@ protocol BedrockConversable: Sendable {
         system: [BedrockRuntime.SystemContentBlock],
         messages: [BedrockRuntime.Message],
         inferenceConfig: BedrockRuntime.InferenceConfiguration,
-        onUsage: (@Sendable (_ inputTokens: Int, _ outputTokens: Int) -> Void)?
+        onUsage: (@Sendable (_ inputTokens: Int, _ outputTokens: Int) -> Void)?,
+        onStop: (@Sendable (_ stopReason: BedrockRuntime.StopReason?) -> Void)?
     ) async throws -> AsyncThrowingStream<String, Error>
 }
 

@@ -1,5 +1,6 @@
 import Testing
 import Foundation
+import Vapor
 @testable import App
 
 @Suite("RequestTranslator")
@@ -22,7 +23,7 @@ struct RequestTranslatorTests {
             stream: nil,
             stop: nil
         )
-        let (system, messages, _) = try translator.translate(request: request, modelID: "model-id", modelMapper: mapper)
+        let (system, messages, _, _) = try translator.translate(request: request, modelID: "model-id", modelMapper: mapper)
         #expect(system.count == 1)
         #expect(messages.count == 1)
     }
@@ -41,7 +42,7 @@ struct RequestTranslatorTests {
             stream: nil,
             stop: nil
         )
-        let (_, messages, _) = try translator.translate(request: request, modelID: "model-id", modelMapper: mapper)
+        let (_, messages, _, _) = try translator.translate(request: request, modelID: "model-id", modelMapper: mapper)
         #expect(messages.count == 1)
     }
 
@@ -56,7 +57,7 @@ struct RequestTranslatorTests {
             stream: nil,
             stop: nil
         )
-        let (_, _, inferenceConfig) = try translator.translate(request: request, modelID: "model-id", modelMapper: mapper)
+        let (_, _, inferenceConfig, _) = try translator.translate(request: request, modelID: "model-id", modelMapper: mapper)
         #expect(inferenceConfig.maxTokens == 256)
         #expect(abs((inferenceConfig.temperature ?? 0) - Float(0.7)) < Float(0.001))
         #expect(abs((inferenceConfig.topP ?? 0) - Float(0.9)) < Float(0.001))
@@ -73,7 +74,7 @@ struct RequestTranslatorTests {
             stream: nil,
             stop: nil
         )
-        let (_, _, inferenceConfig) = try translator.translate(request: request, modelID: "model-id", modelMapper: mapper)
+        let (_, _, inferenceConfig, _) = try translator.translate(request: request, modelID: "model-id", modelMapper: mapper)
         #expect(inferenceConfig.maxTokens == 4096)
     }
 
@@ -88,7 +89,7 @@ struct RequestTranslatorTests {
             stream: nil,
             stop: nil
         )
-        let (_, _, inferenceConfig) = try translator.translate(request: request, modelID: "model-id", modelMapper: mapper)
+        let (_, _, inferenceConfig, _) = try translator.translate(request: request, modelID: "model-id", modelMapper: mapper)
         #expect(inferenceConfig.temperature == nil)
     }
 
@@ -106,7 +107,7 @@ struct RequestTranslatorTests {
             stream: nil,
             stop: nil
         )
-        let (_, messages, _) = try translator.translate(request: request, modelID: "model-id", modelMapper: mapper)
+        let (_, messages, _, _) = try translator.translate(request: request, modelID: "model-id", modelMapper: mapper)
         #expect(messages.count == 1)
     }
 
@@ -125,11 +126,11 @@ struct RequestTranslatorTests {
             stream: nil,
             stop: nil
         )
-        let (_, messages, _) = try translator.translate(request: request, modelID: "model-id", modelMapper: mapper)
+        let (_, messages, _, _) = try translator.translate(request: request, modelID: "model-id", modelMapper: mapper)
         #expect(messages.count == 3)
     }
 
-    @Test("unknown role messages are dropped")
+    @Test("unknown role messages are dropped and adjacent same-role messages merge")
     func unknownRoleIsDropped() throws {
         let request = ChatCompletionRequest(
             model: "gpt-4",
@@ -144,9 +145,142 @@ struct RequestTranslatorTests {
             stream: nil,
             stop: nil
         )
-        let (_, messages, _) = try translator.translate(request: request, modelID: "model-id", modelMapper: mapper)
-        // "function" role is unknown → dropped; leaves two separate user messages
+        let (_, messages, _, _) = try translator.translate(request: request, modelID: "model-id", modelMapper: mapper)
+        // "function" role is unknown → dropped; the two adjacent user messages are then merged into one
+        #expect(messages.count == 1)
+    }
+
+    // MARK: - Tool Calling
+
+    @Test("tool role message maps to Bedrock user toolResult block")
+    func toolRoleMessageMapsToToolResult() throws {
+        let toolCallMsg = ChatMessage(role: "tool", content: "It is sunny", toolCallId: "call-123")
+        let request = ChatCompletionRequest(
+            model: "gpt-4",
+            messages: [
+                ChatMessage(role: "user", content: "What is the weather?"),
+                ChatMessage(role: "assistant", content: "", toolCalls: [
+                    ToolCall(id: "call-123", type: "function", index: nil,
+                             function: ToolCallFunction(name: "get_weather", arguments: "{\"location\":\"Boston\"}"))
+                ]),
+                toolCallMsg,
+            ],
+            maxTokens: 100
+        )
+        let (_, messages, _, _) = try translator.translate(request: request, modelID: "model-id", modelMapper: mapper)
+        // user, assistant, user(toolResult) — last two user blocks may merge
+        #expect(messages.count == 3 || messages.count == 2)
+        // Last message must be a user message containing a toolResult block
+        let lastMsg = messages.last!
+        #expect(lastMsg.role == .user)
+        let hasToolResult = lastMsg.content.contains { block in
+            if case .toolResult = block { return true }
+            return false
+        }
+        #expect(hasToolResult)
+    }
+
+    @Test("assistant message with toolCalls produces toolUse content blocks")
+    func assistantWithToolCallsProducesToolUseBlocks() throws {
+        let toolCall = ToolCall(
+            id: "call-abc",
+            type: "function",
+            index: nil,
+            function: ToolCallFunction(name: "get_weather", arguments: "{\"location\":\"Boston\"}")
+        )
+        let request = ChatCompletionRequest(
+            model: "gpt-4",
+            messages: [
+                ChatMessage(role: "user", content: "What is the weather?"),
+                ChatMessage(role: "assistant", content: "", toolCalls: [toolCall]),
+            ],
+            maxTokens: 100
+        )
+        let (_, messages, _, _) = try translator.translate(request: request, modelID: "model-id", modelMapper: mapper)
         #expect(messages.count == 2)
+        let assistantMsg = messages[1]
+        #expect(assistantMsg.role == .assistant)
+        let hasToolUse = assistantMsg.content.contains { block in
+            if case .toolUse = block { return true }
+            return false
+        }
+        #expect(hasToolUse)
+    }
+
+    @Test("tools translated to Bedrock ToolConfiguration")
+    func toolsTranslatedToToolConfig() throws {
+        let toolsJSON: JSONValue = .array([
+            .object([
+                "type": .string("function"),
+                "function": .object([
+                    "name": .string("get_weather"),
+                    "description": .string("Get current weather"),
+                    "parameters": .object([
+                        "type": .string("object"),
+                        "properties": .object([
+                            "location": .object(["type": .string("string")])
+                        ])
+                    ])
+                ])
+            ])
+        ])
+        guard case .array(let tools) = toolsJSON else {
+            Issue.record("Expected array"); return
+        }
+        let request = ChatCompletionRequest(
+            model: "gpt-4",
+            messages: [ChatMessage(role: "user", content: "Weather?")],
+            maxTokens: 100,
+            tools: tools,
+            toolChoice: .string("auto")
+        )
+        let (_, _, _, toolConfig) = try translator.translate(request: request, modelID: "model-id", modelMapper: mapper)
+        #expect(toolConfig != nil)
+        #expect(toolConfig?.tools.count == 1)
+    }
+
+    @Test("tool_choice none produces nil toolConfig")
+    func toolChoiceNoneProducesNilConfig() throws {
+        let tools: [JSONValue] = [
+            .object([
+                "type": .string("function"),
+                "function": .object(["name": .string("get_weather"), "parameters": .object([:])])
+            ])
+        ]
+        let request = ChatCompletionRequest(
+            model: "gpt-4",
+            messages: [ChatMessage(role: "user", content: "hi")],
+            maxTokens: 100,
+            tools: tools,
+            toolChoice: .string("none")
+        )
+        let (_, _, _, toolConfig) = try translator.translate(request: request, modelID: "model-id", modelMapper: mapper)
+        #expect(toolConfig == nil)
+    }
+
+    @Test("consecutive tool messages merge into single Bedrock user message")
+    func consecutiveToolMessagesMerge() throws {
+        let request = ChatCompletionRequest(
+            model: "gpt-4",
+            messages: [
+                ChatMessage(role: "user", content: "Run tools"),
+                ChatMessage(role: "assistant", content: "", toolCalls: [
+                    ToolCall(id: "call-1", type: "function", index: nil,
+                             function: ToolCallFunction(name: "tool_a", arguments: "{}")),
+                    ToolCall(id: "call-2", type: "function", index: nil,
+                             function: ToolCallFunction(name: "tool_b", arguments: "{}"))
+                ]),
+                ChatMessage(role: "tool", content: "Result A", toolCallId: "call-1"),
+                ChatMessage(role: "tool", content: "Result B", toolCallId: "call-2"),
+            ],
+            maxTokens: 100
+        )
+        let (_, messages, _, _) = try translator.translate(request: request, modelID: "model-id", modelMapper: mapper)
+        // user, assistant, user(2 toolResults merged)
+        #expect(messages.count == 3)
+        let lastMsg = messages[2]
+        #expect(lastMsg.role == .user)
+        #expect(lastMsg.content.count == 2)
     }
 
     // MARK: - Image Support
@@ -169,7 +303,7 @@ struct RequestTranslatorTests {
             stop: nil
         )
         let modelID = "us.anthropic.claude-sonnet-4-5-20250929-v1:0"
-        let (_, messages, _) = try translator.translate(request: request, modelID: modelID, modelMapper: mapper)
+        let (_, messages, _, _) = try translator.translate(request: request, modelID: modelID, modelMapper: mapper)
         #expect(messages.count == 1)
         let content = messages[0].content
         // Should have a text block and an image block
@@ -264,7 +398,7 @@ struct RequestTranslatorTests {
             stream: nil,
             stop: nil
         )
-        let (_, messages, _) = try translator.translate(
+        let (_, messages, _, _) = try translator.translate(
             request: request,
             modelID: "us.anthropic.claude-sonnet-4-5-20250929-v1:0",
             modelMapper: mapper

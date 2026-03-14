@@ -78,6 +78,12 @@ private func parseDataURL(_ url: String) -> ImageData? {
     return ImageData(format: format, base64Data: base64Data)
 }
 
+// MARK: - Chat Completion Request helpers
+
+struct ResponseFormat: Codable, Sendable {
+    let type: String
+}
+
 // MARK: - Chat Completion Request
 
 struct ChatCompletionRequest: Content {
@@ -88,11 +94,82 @@ struct ChatCompletionRequest: Content {
     let topP: Double?
     let stream: Bool?
     let stop: [String]?
+    // Fields decoded but not forwarded to Bedrock
+    let n: Int?
+    let logprobs: Bool?
+    let seed: Int?
+    let user: String?
+    let frequencyPenalty: Double?
+    let presencePenalty: Double?
+    let responseFormat: ResponseFormat?
+    let tools: [JSONValue]?
+    let toolChoice: JSONValue?
+
+    /// Memberwise init — new optional params default to nil so existing call-sites don't break.
+    init(
+        model: String,
+        messages: [ChatMessage],
+        maxTokens: Int? = nil,
+        temperature: Double? = nil,
+        topP: Double? = nil,
+        stream: Bool? = nil,
+        stop: [String]? = nil,
+        n: Int? = nil,
+        logprobs: Bool? = nil,
+        seed: Int? = nil,
+        user: String? = nil,
+        frequencyPenalty: Double? = nil,
+        presencePenalty: Double? = nil,
+        responseFormat: ResponseFormat? = nil,
+        tools: [JSONValue]? = nil,
+        toolChoice: JSONValue? = nil
+    ) {
+        self.model = model
+        self.messages = messages
+        self.maxTokens = maxTokens
+        self.temperature = temperature
+        self.topP = topP
+        self.stream = stream
+        self.stop = stop
+        self.n = n
+        self.logprobs = logprobs
+        self.seed = seed
+        self.user = user
+        self.frequencyPenalty = frequencyPenalty
+        self.presencePenalty = presencePenalty
+        self.responseFormat = responseFormat
+        self.tools = tools
+        self.toolChoice = toolChoice
+    }
+
+    init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        model             = try c.decode(String.self,           forKey: .model)
+        messages          = try c.decode([ChatMessage].self,    forKey: .messages)
+        maxTokens         = try c.decodeIfPresent(Int.self,     forKey: .maxTokens)
+        temperature       = try c.decodeIfPresent(Double.self,  forKey: .temperature)
+        topP              = try c.decodeIfPresent(Double.self,  forKey: .topP)
+        stream            = try c.decodeIfPresent(Bool.self,    forKey: .stream)
+        stop              = try c.decodeIfPresent([String].self, forKey: .stop)
+        n                 = try c.decodeIfPresent(Int.self,     forKey: .n)
+        logprobs          = try c.decodeIfPresent(Bool.self,    forKey: .logprobs)
+        seed              = try c.decodeIfPresent(Int.self,     forKey: .seed)
+        user              = try c.decodeIfPresent(String.self,  forKey: .user)
+        frequencyPenalty  = try c.decodeIfPresent(Double.self,  forKey: .frequencyPenalty)
+        presencePenalty   = try c.decodeIfPresent(Double.self,  forKey: .presencePenalty)
+        responseFormat    = try c.decodeIfPresent(ResponseFormat.self, forKey: .responseFormat)
+        tools             = try c.decodeIfPresent([JSONValue].self, forKey: .tools)
+        toolChoice        = try c.decodeIfPresent(JSONValue.self,   forKey: .toolChoice)
+    }
 
     enum CodingKeys: String, CodingKey {
-        case model, messages, temperature, stream, stop
+        case model, messages, temperature, stream, stop, n, logprobs, seed, user, tools
         case maxTokens = "max_tokens"
         case topP = "top_p"
+        case frequencyPenalty = "frequency_penalty"
+        case presencePenalty = "presence_penalty"
+        case responseFormat = "response_format"
+        case toolChoice = "tool_choice"
     }
 }
 
@@ -100,11 +177,17 @@ struct ChatMessage: Content {
     let role: String
     /// Structured content — either a plain string or a list of parts (text + images).
     let content: MessageContent
+    /// Tool calls requested by an assistant message.
+    let toolCalls: [ToolCall]?
+    /// Tool result message: the ID of the tool call this result is for.
+    let toolCallId: String?
 
     /// Convenience init for plain-text content (used throughout production code and tests).
-    init(role: String, content: String) {
+    init(role: String, content: String, toolCalls: [ToolCall]? = nil, toolCallId: String? = nil) {
         self.role = role
         self.content = .text(content)
+        self.toolCalls = toolCalls
+        self.toolCallId = toolCallId
     }
 
     init(from decoder: any Decoder) throws {
@@ -112,10 +195,10 @@ struct ChatMessage: Content {
         role = try container.decode(String.self, forKey: .role)
 
         // Try plain string first, then fall back to content-part array.
+        // Content may be null for assistant tool-call messages.
         if let plain = try? container.decode(String.self, forKey: .content) {
             content = .text(plain)
-        } else {
-            let parts = try container.decode([ContentPart].self, forKey: .content)
+        } else if let parts = try? container.decode([ContentPart].self, forKey: .content) {
             let messageParts: [MessagePart] = parts.compactMap { part in
                 if part.type == "text", let text = part.text {
                     return .text(text)
@@ -127,17 +210,34 @@ struct ChatMessage: Content {
                 return nil
             }
             content = .parts(messageParts)
+        } else {
+            // null or missing content (e.g. assistant tool-call message)
+            content = .text("")
         }
+
+        toolCalls = try container.decodeIfPresent([ToolCall].self, forKey: .toolCalls)
+        toolCallId = try container.decodeIfPresent(String.self, forKey: .toolCallId)
     }
 
     func encode(to encoder: any Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(role, forKey: .role)
-        // Images are input-only; responses always carry plain text.
-        try container.encode(content.textOnly, forKey: .content)
+        if toolCalls != nil {
+            // Content is null when tool calls are present (OpenAI spec)
+            try container.encodeNil(forKey: .content)
+        } else {
+            // Images are input-only; responses always carry plain text.
+            try container.encode(content.textOnly, forKey: .content)
+        }
+        try container.encodeIfPresent(toolCalls, forKey: .toolCalls)
+        try container.encodeIfPresent(toolCallId, forKey: .toolCallId)
     }
 
-    private enum CodingKeys: String, CodingKey { case role, content }
+    private enum CodingKeys: String, CodingKey {
+        case role, content
+        case toolCalls = "tool_calls"
+        case toolCallId = "tool_call_id"
+    }
 
     private struct ContentPart: Decodable {
         let type: String
@@ -193,6 +293,20 @@ struct UsageInfo: Content {
     }
 }
 
+// MARK: - Tool Calling
+
+struct ToolCallFunction: Codable, Sendable {
+    let name: String?        // nil in argument-delta streaming chunks
+    let arguments: String?   // JSON-encoded string; null when no arguments
+}
+
+struct ToolCall: Codable, Sendable {
+    let id: String?         // nil in argument-delta streaming chunks
+    let type: String?       // "function"; nil in delta chunks
+    let index: Int?         // streaming only (tool index)
+    let function: ToolCallFunction
+}
+
 // MARK: - Streaming Chunk
 
 struct ChatCompletionChunk: Content {
@@ -216,11 +330,60 @@ struct ChunkChoice: Content {
         case index, delta
         case finishReason = "finish_reason"
     }
+
+    /// `finish_reason` is omitted when nil (intermediate chunks) and present as a
+    /// string in the final stop chunk. Never written as explicit null.
+    func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(index, forKey: .index)
+        try container.encode(delta, forKey: .delta)
+        try container.encodeIfPresent(finishReason, forKey: .finishReason)
+    }
 }
 
 struct ChunkDelta: Content {
     let role: String?
     let content: String?
+    let toolCalls: [ToolCall]?
+
+    init(role: String?, content: String?, toolCalls: [ToolCall]? = nil) {
+        self.role = role
+        self.content = content
+        self.toolCalls = toolCalls
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case role, content
+        case toolCalls = "tool_calls"
+    }
+
+    /// `content` must always be present — `null` when absent (e.g. stop chunk) so
+    /// that Xcode's parser never encounters a delta with no `content` key at all.
+    /// `role` is still omitted when nil (only the initial role chunk carries it).
+    /// When `toolCalls` is non-nil, `content` is encoded as explicit null and `tool_calls` is emitted.
+    func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encodeIfPresent(role, forKey: .role)
+        if let toolCalls {
+            try container.encode(Optional<String>.none, forKey: .content)
+            try container.encode(toolCalls, forKey: .toolCalls)
+        } else {
+            try container.encode(content, forKey: .content)
+        }
+    }
+}
+
+// MARK: - Error Response
+
+struct OpenAIErrorDetail: Content {
+    let message: String
+    let type: String
+    let param: String?
+    let code: String?
+}
+
+struct OpenAIErrorResponse: Content {
+    let error: OpenAIErrorDetail
 }
 
 // MARK: - Models List

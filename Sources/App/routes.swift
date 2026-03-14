@@ -23,8 +23,9 @@ public func routes(_ app: Application) throws {
         protected = app
     }
 
-    try protected.register(collection: ModelsController())
-    try protected.register(collection: ChatController(
+    let openAI = protected.grouped(OpenAIErrorMiddleware())
+    try openAI.register(collection: ModelsController())
+    try openAI.register(collection: ChatController(
         bedrockService: bedrockService,
         modelMapper: modelMapper,
         requestTranslator: requestTranslator,
